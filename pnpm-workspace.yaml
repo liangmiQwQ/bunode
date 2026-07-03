@@ -1,0 +1,7 @@
+packages:
+  - 'packages/*'
+
+linkWorkspacePackages: true
+preferWorkspacePackages: true
+sharedWorkspaceLockfile: true
+resolvePeersFromWorkspaceRoot: true
