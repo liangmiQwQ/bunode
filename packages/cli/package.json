@@ -2,11 +2,22 @@
   "name": "@bunode/cli",
   "version": "0.0.0-alpha.0",
   "description": "Node.js-compatible registry tooling for Bunode.",
+  "homepage": "https://github.com/liangmiQwQ/bunode#readme",
+  "bugs": {
+    "url": "https://github.com/liangmiQwQ/bunode/issues"
+  },
+  "license": "MIT",
+  "author": "Liang Mi <hi@liangmi.dev>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liangmiQwQ/bunode.git"
+  },
   "bin": {
-    "bunode-registry": "./dist/cli.mjs"
+    "bunode": "./bin/bunode.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "bin"
   ],
   "type": "module"
 }

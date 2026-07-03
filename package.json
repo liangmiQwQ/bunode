@@ -1,12 +1,5 @@
 {
-  "name": "bunode",
-  "version": "0.0.0-alpha.0",
   "private": true,
-  "description": "A Node.js compatible layer for Bun.",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/liangmiQwQ/bunode.git"
-  },
   "type": "module",
   "scripts": {
     "build": "vp run cbuild",
