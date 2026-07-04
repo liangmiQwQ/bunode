@@ -5,3 +5,6 @@ linkWorkspacePackages: true
 preferWorkspacePackages: true
 sharedWorkspaceLockfile: true
 resolvePeersFromWorkspaceRoot: true
+
+catalogMode: strict
+catalogs:
