@@ -1,18 +1,20 @@
 import { base } from '@liangmi/vp-config'
 
-import registerVpConfig from './packages/cli/vite.config.ts'
-
-const lintOverride = registerVpConfig.lint
-delete lintOverride?.categories
-delete lintOverride?.options
-delete lintOverride?.ignorePatterns
-delete lintOverride?.overrides
-
 export default base({
-  staged: {
-    '*': 'vp check --fix'
-  },
-  lint: {
-    overrides: [{ files: ['packages/registry'], ...lintOverride }]
+  run: {
+    tasks: {
+      test: {
+        command: ['vp test', 'cargo test --workspace'],
+        input: [{ auto: true }, '!target/**']
+      },
+      check: {
+        command: [
+          'vpr ccheck',
+          'cargo fmt --check',
+          'cargo clippy --workspace --all-targets -- -D warnings'
+        ],
+        input: [{ auto: true }, '!target/**']
+      }
+    }
   }
 })

@@ -1,10 +1,15 @@
 packages:
   - 'packages/*'
+catalog:
+  '@liangmi/vp-config': ^0.3.0
+  '@typescript/native-preview': 7.0.0-dev.20260703.1
+  '@types/node': ^26.1.0
+  typescript: ^6.0.3
+  vite-plus: ^0.2.2
+
+catalogMode: strict
 
 linkWorkspacePackages: true
 preferWorkspacePackages: true
-sharedWorkspaceLockfile: true
 resolvePeersFromWorkspaceRoot: true
-
-catalogMode: strict
-catalogs:
+sharedWorkspaceLockfile: true

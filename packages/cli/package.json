@@ -21,6 +21,6 @@
   ],
   "type": "module",
   "devDependencies": {
-    "@types/node": "^26.1.0"
+    "@types/node": "catalog:"
   }
 }

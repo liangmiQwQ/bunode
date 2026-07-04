@@ -26,10 +26,12 @@ Its source code won't be published on crates.io. Only for internal use.
 
 ## Rule
 
-Vite+ is used as the project manager for JavaScript part. Use `vp install` to install dependencies, use `vp install -D` if the adden dependency can be bundled. Use `vp run` command to run commands in `package.json`.
+Vite+ is used as the project manager for JavaScript part. Use `vp install` to install dependencies, use `vp install -D` if the adden dependency can be bundled. Use `vp run` command to run commands in `package.json`. Vite+ is not the same as Vite, it includes Vitest (`vp test`), tsdown (`vp pack`), Oxlint (`vp lint`), Oxfmt (`vp fmt`) and task run, staged feature. Follow its document (node_modules/vite-plus/docs) to learn more. Do not add Vitest or tsdown separately unless Vite+ cannot provide the needed surface.
+
+Use pnpm catalog for workspace package dependencies. Keep dependency versions in `pnpm-workspace.yaml`'s default catalog and use `catalog:` in package manifests.
 
 Rust tasks are also defined in Vite+ (Vite Task), in project root's `vite.config.ts`.
-Run `vpr check` (lint and format for both Rust and JavaScript) after you make changes.
+Run `vpr check` (lint and format for both Rust and JavaScript) and `vpr test` after you make changes.
 
 Keep AGENTS.md updated with the project codebase. Consider if there is need to modify AGENTS.md after your changes. Don't store detail things like file structure or project implementation details in AGENTS.md.
 

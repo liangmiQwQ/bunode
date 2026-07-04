@@ -2,14 +2,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vp run cbuild",
-    "check": "vp run ccheck",
-    "format": "vp run cformat",
-    "lint": "vp run clint"
+    "ready": "vpr test && vpr check"
   },
   "devDependencies": {
-    "@liangmi/vp-config": "^0.2.0",
-    "typescript": "^6.0.3"
+    "@liangmi/vp-config": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
   },
   "devEngines": {
     "packageManager": {
