@@ -20,17 +20,19 @@ It's mainly designed for future tarball releasing.
 
 ### Version control
 
-Bun itself has a masqueraded Node.js version, we can get it from running `bun -p "console.log(process.version)"`
+Bun itself has a masqueraded Node.js version, we can get it from running `bun -p "process.version"`
 
-To keep Bun's semver semantic, we use a hacky but effective way: add a to the prerelease flag Bun's own compatible-layer version.
+To keep Bun's semver semantic, we use a hacky but effective way: add a build metadata mark to Bun's own compatible-layer version.
 
-For example: `bun v1.4.0` -> `bun -p "console.log(process.version)" v26.3.0` `node v26.3.0-bun.1.4.0` (Bunode)
+For example: `bun v1.4.0` -> `bun -p "process.version" v26.3.0` `node v26.3.0+bun.1.4.0` (Bunode)
 
 So if developers define `package.json#engines.node` like `>=22.18.0` or `^26.2.0`, it will keep Bunode usable.
 
 The version is injected in `node --version`, registry and other places needs version.
 
-We won't modify `node -e "console.log(process.version)"`'s version result, we will keep it as is for internal checking to avoid confusion.
+We won't modify `node -p "process.version"`'s version result, we will keep it as is for internal checking to avoid confusion.
+
+The only problem is that flag will be ignored when comparing the version (`v26.3.0+bun.1.4.0` `v26.3.0+bun.1.3.8` has completely the same priority). So it requires developers to declare its version precisely.
 
 ### `node` direct calls
 
@@ -38,7 +40,7 @@ We wrap `bun repl`. Replacing the first line's `Bun` and its version to `Node.js
 
 We can't make the behavior 100% compatible but it is basically similar. Considering this feature is mainly for human to call, so I think it's not a big deal.
 
-For CI and non-TTY environment, Node.js executes stdin instead of starting the REPL. We follow its behavior as well by using `bun run -`
+For CI and non-TTY environment, Node.js executes stdin instead of starting the REPL. We follow its behavior as well by using `bun run -` (The same arguments as the explanation below)
 
 ### `node [options] [ script.js ] [arguments]`
 
@@ -46,7 +48,13 @@ We wrap `bun run --no-install --no-env-file` for the script running.
 
 Considering `bun run` can also trigger tasks in `package.json`, we prepend a `./` (`.\` on Windows) for pure script name (without any `/`, `\` in windows).
 
-For node options, we will try to translate them to buns or wrap as much as possible.
+For node options, we will try to translate them to buns or wrap as much as possible, as well as Node's environment variables. For `NODE_OPTIONS`, we follow the same translating method and handle priority the same as Node does.
+
+### Bun-specific options
+
+We hope users are able to control Bun's behavior.
+
+For the options / flags that Node.js doesn't directly have, we use a `--bun` prefix. For example, `--bun-config` to specific which `bunfig.toml` is to use.
 
 ### Preload
 
@@ -58,7 +66,7 @@ The preload can be injected with `bun --preload`, the preload JavaScript file wi
 
 ### Help document
 
-In `node --help`, we only print supported options. And avoid printing unsupported options, environment variables and subcommands.
+In `node --help`, we only print supported options, including bun specific translated options. And avoid printing unsupported options, environment variables and subcommands.
 
 We can warn / error to these flags if users call them. But they should not be put in the help document to confuse users.
 
@@ -82,7 +90,7 @@ For example:
 bunode: `node inspect` is not supported because Bun does not provide Node's built-in CLI debugger.
 Use `node --inspect` / `node --inspect-brk` compatible flags instead.
 
-tips: Bunode is a Node.js compatibility layer for Bun. Your using Node.js v26.3.0-bun.1.4.0 is actually based on Bun v1.4.0.
+tips: Bunode is a Node.js compatibility layer for Bun. Your using Node.js v26.3.0+bun.1.4.0 is actually based on Bun v1.4.0.
 ```
 
 Different bun versions may also have different levels of Node.js compatibility, we change the detail behavior based on Bun's real version in codebase.
