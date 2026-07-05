@@ -82,7 +82,7 @@ For example:
 bunode: `node inspect` is not supported because Bun does not provide Node's built-in CLI debugger.
 Use `node --inspect` / `node --inspect-brk` compatible flags instead.
 
-tips: Bunode is a Node.js compatibility layer for Bun. Your using Node.js v26.3.100 is actually based on Bun v1.4.0.
+tips: Bunode is a Node.js compatibility layer for Bun. Your using Node.js v26.3.0-bun.1.4.0 is actually based on Bun v1.4.0.
 ```
 
 Different bun versions may also have different levels of Node.js compatibility, we change the detail behavior based on Bun's real version in codebase.
