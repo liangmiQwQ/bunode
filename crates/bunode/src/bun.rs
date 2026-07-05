@@ -4,7 +4,30 @@
 //!
 //! Core function: `bun` function, it receives argvs you push to Bun.
 
-use std::ffi::OsString;
+use std::{
+  env,
+  ffi::OsString,
+  io,
+  path::PathBuf,
+  process::{Command, ExitStatus},
+};
 
 #[allow(dead_code)]
-pub const fn bun(_args: &[OsString]) {}
+pub fn bun(args: &[OsString]) -> io::Result<ExitStatus> {
+  // We don't modify output. (See rfcs/rust-wrapper-core.md)
+  Command::new(find()?).args(args).status()
+}
+
+fn find() -> io::Result<PathBuf> {
+  let executable = env::current_exe()?;
+  let executable_dir = executable.parent().ok_or_else(|| {
+    io::Error::new(io::ErrorKind::NotFound, "failed to resolve Bunode executable directory")
+  })?;
+
+  #[cfg(windows)]
+  let result = { executable_dir.join("bun").join("bun.exe") };
+  #[cfg(not(windows))]
+  let result = { executable_dir.join("..").join("bun").join("bun") };
+
+  Ok(result)
+}
