@@ -12,6 +12,8 @@ const snapFileName = 'snap.txt'
 const snapColoredFileName = 'snap-colored.txt'
 const devSetupTimeout = 300_000
 const snapTestTimeout = 120_000
+// Windows CI prebuilds outside Vite Task to avoid MSVC vctip handle leaks.
+const skipCargoDevBuild = process.env.BUNODE_SKIP_DEV_BUILD === '1'
 const ansiPattern = new RegExp(
   `${String.fromCodePoint(27)}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])`,
   'g'
@@ -173,7 +175,11 @@ function readStringArray(
 }
 
 async function setupDevBuild(bunVersion: string) {
-  await runShellCommand(`vpr dev ${quoteShellArgument(bunVersion)}`, projectRoot, process.env)
+  if (!skipCargoDevBuild) {
+    await runProcess('cargo', ['build', '-p', 'bunode'], projectRoot, process.env)
+  }
+
+  await runProcess(process.execPath, ['scripts/setup-dev.ts', bunVersion], projectRoot, process.env)
 }
 
 async function runSnapshotPhase(
@@ -270,6 +276,58 @@ function runShellCommand(
   })
 }
 
+function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  signal?: AbortSignal
+) {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      signal,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    let output = ''
+    let settled = false
+
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', chunk => {
+      output += chunk
+    })
+    child.stderr.on('data', chunk => {
+      output += chunk
+    })
+
+    child.on('error', error => {
+      if (!settled) {
+        settled = true
+        reject(error)
+      }
+    })
+
+    child.on('close', code => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+
+      if (code === 0) {
+        resolve(output)
+        return
+      }
+
+      reject(
+        new Error(`${command} ${args.join(' ')} exited with code ${code ?? 1} in ${cwd}\n${output}`)
+      )
+    })
+  })
+}
+
 function createSnapEnv(mode: 'plain' | 'colored') {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -294,14 +352,6 @@ function createSnapEnv(mode: 'plain' | 'colored') {
 
 function getDevPathDirectory() {
   return platform === 'win32' ? resolve(projectRoot, '.dev') : resolve(projectRoot, '.dev/bin')
-}
-
-function quoteShellArgument(value: string) {
-  if (platform === 'win32') {
-    return `"${value.replaceAll('"', String.raw`\"`)}"`
-  }
-
-  return `'${value.replaceAll("'", String.raw`'\''`)}'`
 }
 
 function stripAnsi(value: string) {

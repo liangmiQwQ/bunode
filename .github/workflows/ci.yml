@@ -78,4 +78,11 @@ jobs:
           run-install: true
 
       - name: Test
+        if: runner.os != 'Windows'
         run: vpr test
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        env:
+          BUNODE_SKIP_DEV_BUILD: '1'
+        run: cargo test --workspace && cargo build -p bunode && vp test

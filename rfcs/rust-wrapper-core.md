@@ -36,7 +36,7 @@ The only problem is that flag will be ignored when comparing the version (`v26.3
 
 ### `node` direct calls
 
-We wrap `bun repl`. Replacing the first line's `Bun` and its version to `Node.js` and its version follows the instruction above.
+We wrap `bun repl`.
 
 We can't make the behavior 100% compatible but it is basically similar. Considering this feature is mainly for human to call, so I think it's not a big deal.
 
@@ -72,11 +72,13 @@ We can warn / error to these flags if users call them. But they should not be pu
 
 ## Non Goal
 
-### The completely same output
+### Modifying output
 
-Bun's output system (error rendering, repl interactive logic) is quite different from Node.js's. It's difficult and meaningless to make the output completely the same. Most cases, output is for humans and agents to read.
+Bun's output system (error rendering, repl interactive logic) is quite different from Node.js's. It's difficult and meaningless to make the output completely the same. Most cases, output is for humans and agents to read, and Bun's output is readable.
 
-We only modify misleading output (like repl's header, `node -v`). And leave more energy to focus on input compatibility.
+Modifying output needs PTY handling, which will bring complexity and decreased performance. We need to leave more effort to focus on input compatibility.
+
+However, there does have some misleading output, like Bun version tags and brand output in syntax errors. It may confuse AI agents. This may be a trade-off that cannot be resolved in the short term.
 
 ### CLI 100% compatibility
 

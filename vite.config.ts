@@ -1,6 +1,9 @@
 import { base } from '@liangmi/vp-config'
 
-const cargoTask = { input: [{ auto: true }, '!target/**', '!.dev/**'], output: [] }
+const cargoTask = {
+  input: [{ auto: true }, '!target/**', '!.dev/**'],
+  output: []
+}
 
 export default base({
   run: {
@@ -16,7 +19,7 @@ export default base({
         cache: false
       },
       test: {
-        command: ['vp test', 'cargo test --workspace'],
+        command: ['cargo test --workspace', 'vp test'],
         ...cargoTask
       },
       check: {
