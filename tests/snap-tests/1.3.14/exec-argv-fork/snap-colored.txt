@@ -1,0 +1,3 @@
+parentExecArgv=["--conditions","custom","-r","./preload.cjs"]
+childExecArgv=["--conditions","custom","-r","./preload.cjs"]
+childArgv=child
