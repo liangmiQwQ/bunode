@@ -4,7 +4,7 @@ use std::ffi::{OsStr, OsString};
 
 use crate::cli::{BunodeCommandOption, CliError, NodeCommand};
 
-use super::options::{OPTION_SPECS, OptionAction, OptionSpec, ValueMode};
+use super::options::{HelpSection, OPTION_SPECS, OptionAction, OptionSpec, ValueMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {
@@ -17,6 +17,9 @@ struct ParseState {
   help: bool,
   version: bool,
   inline_command: Option<NodeCommand>,
+  print_mode: bool,
+  ended_by_double_dash: bool,
+  exec_argv: Vec<OsString>,
   bun_options: Vec<OsString>,
   operands: Vec<OsString>,
 }
@@ -41,10 +44,22 @@ where
   let args = args.collect::<Vec<_>>();
   parse_tokens(&args, Source::CommandLine, &mut state)?;
 
-  let command = state.command()?;
-  let script_arguments = state.script_arguments();
+  let parsed = state.finish()?;
 
-  Ok(BunodeCommandOption { argv0, command, bun_options: state.bun_options, script_arguments })
+  Ok(BunodeCommandOption {
+    argv0,
+    command: parsed.command,
+    exec_argv: parsed.exec_argv,
+    bun_options: parsed.bun_options,
+    script_arguments: parsed.script_arguments,
+  })
+}
+
+struct ParsedState {
+  command: NodeCommand,
+  exec_argv: Vec<OsString>,
+  bun_options: Vec<OsString>,
+  script_arguments: Vec<OsString>,
 }
 
 fn parse_tokens(
@@ -63,6 +78,7 @@ fn parse_tokens(
         return Err(CliError::new("`--` is not allowed in NODE_OPTIONS"));
       }
 
+      state.ended_by_double_dash = true;
       state.operands.extend(tokens[(index + 1)..].iter().cloned());
       break;
     }
@@ -99,31 +115,32 @@ fn parse_long_option(
     return Err(unsupported_option(name));
   };
 
-  let value = match spec.value {
-    ValueMode::None => {
-      if inline_value.is_some() {
-        return Err(CliError::new(format!("option `{name}` does not take a value")));
-      }
+  let (value, next_index) = if matches!(spec.action, OptionAction::Print) {
+    (inline_value.map(OsString::from), index + 1)
+  } else {
+    match spec.value {
+      ValueMode::None => {
+        if inline_value.is_some() {
+          return Err(CliError::new(format!("option `{name}` does not take a value")));
+        }
 
-      None
+        (None, index + 1)
+      }
+      ValueMode::Required => match inline_value {
+        Some(value) => (Some(OsString::from(value)), index + 1),
+        None => {
+          let value = required_next_token(tokens, index + 1, name)?;
+          (Some(value), index + 2)
+        }
+      },
+      ValueMode::OptionalEquals => (inline_value.map(OsString::from), index + 1),
     }
-    ValueMode::Required => Some(match inline_value {
-      Some(value) => OsString::from(value),
-      None => tokens
-        .get(index + 1)
-        .cloned()
-        .ok_or_else(|| CliError::new(format!("option `{name}` requires a value")))?,
-    }),
-    ValueMode::OptionalEquals => inline_value.map(OsString::from),
   };
 
   apply_option(spec, value, source, state)?;
+  record_exec_argv(spec, source, tokens, index, next_index, state);
 
-  if spec.value == ValueMode::Required && inline_value.is_none() {
-    Ok(index + 2)
-  } else {
-    Ok(index + 1)
-  }
+  Ok(next_index)
 }
 
 fn parse_short_option(
@@ -133,6 +150,11 @@ fn parse_short_option(
   state: &mut ParseState,
 ) -> Result<usize, CliError> {
   let token = tokens[index].to_string_lossy();
+
+  if token == "-pe" {
+    return parse_print_eval_shortcut(tokens, index, source, state);
+  }
+
   let Some(short) = token[1..].chars().next() else {
     return Err(unsupported_option(&token));
   };
@@ -142,32 +164,65 @@ fn parse_short_option(
   let rest = &token[(1 + short.len_utf8())..];
   let option_name = format!("-{short}");
 
-  let value = match spec.value {
-    ValueMode::None => {
-      if !rest.is_empty() {
-        return Err(CliError::new(format!("option `{option_name}` does not take a value")));
-      }
+  if !rest.is_empty() {
+    return Err(unsupported_option(&token));
+  }
 
-      None
+  let (value, next_index) = if matches!(spec.action, OptionAction::Print) {
+    (None, index + 1)
+  } else {
+    match spec.value {
+      ValueMode::None | ValueMode::OptionalEquals => (None, index + 1),
+      ValueMode::Required => {
+        (Some(required_next_token(tokens, index + 1, &option_name)?), index + 2)
+      }
     }
-    ValueMode::Required => Some(if rest.is_empty() {
-      tokens
-        .get(index + 1)
-        .cloned()
-        .ok_or_else(|| CliError::new(format!("option `{option_name}` requires a value")))?
-    } else {
-      OsString::from(rest)
-    }),
-    ValueMode::OptionalEquals => None,
   };
 
   apply_option(spec, value, source, state)?;
+  record_exec_argv(spec, source, tokens, index, next_index, state);
 
-  if spec.value == ValueMode::Required && rest.is_empty() { Ok(index + 2) } else { Ok(index + 1) }
+  Ok(next_index)
+}
+
+fn parse_print_eval_shortcut(
+  tokens: &[OsString],
+  index: usize,
+  source: Source,
+  state: &mut ParseState,
+) -> Result<usize, CliError> {
+  let print_spec = find_short_option('p').ok_or_else(|| unsupported_option("-p"))?;
+  let eval_spec = find_short_option('e').ok_or_else(|| unsupported_option("-e"))?;
+  let value = required_next_token(tokens, index + 1, "-e")?;
+
+  apply_option(print_spec, None, source, state)?;
+  apply_option(eval_spec, Some(value), source, state)?;
+
+  if source == Source::CommandLine {
+    state.exec_argv.extend(tokens[index..(index + 2)].iter().cloned());
+  }
+
+  Ok(index + 2)
 }
 
 fn split_long_option(token: &str) -> (&str, Option<&str>) {
   token.split_once('=').map_or((token, None), |(name, value)| (name, Some(value)))
+}
+
+fn required_next_token(
+  tokens: &[OsString],
+  index: usize,
+  option: &str,
+) -> Result<OsString, CliError> {
+  let Some(value) = tokens.get(index) else {
+    return Err(CliError::new(format!("option `{option}` requires a value")));
+  };
+
+  if value.to_string_lossy().starts_with('-') {
+    return Err(CliError::new(format!("option `{option}` requires a value")));
+  }
+
+  Ok(value.clone())
 }
 
 fn find_long_option(name: &str) -> Option<&'static OptionSpec> {
@@ -176,6 +231,21 @@ fn find_long_option(name: &str) -> Option<&'static OptionSpec> {
 
 fn find_short_option(short: char) -> Option<&'static OptionSpec> {
   OPTION_SPECS.iter().find(|spec| spec.short == Some(short))
+}
+
+fn record_exec_argv(
+  spec: &OptionSpec,
+  source: Source,
+  tokens: &[OsString],
+  start: usize,
+  end: usize,
+  state: &mut ParseState,
+) {
+  if source == Source::CommandLine
+    && spec.help.is_some_and(|help| help.section == HelpSection::Node)
+  {
+    state.exec_argv.extend(tokens[start..end].iter().cloned());
+  }
 }
 
 fn apply_option(
@@ -196,7 +266,8 @@ fn apply_option(
       state.inline_command = Some(NodeCommand::Eval(required_action_value(value, spec)?));
     }
     OptionAction::Print => {
-      state.inline_command = Some(NodeCommand::Print(required_action_value(value, spec)?));
+      // Node accepts `--print=<value>` but still reads the expression from argv operands.
+      state.print_mode = true;
     }
     OptionAction::ForwardFlag(name) => state.bun_options.push(OsString::from(name)),
     OptionAction::ForwardValue(name) => {
@@ -235,21 +306,9 @@ fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, CliError> {
   let mut result = Vec::new();
   let mut current = String::new();
   let mut quote = None;
-  let mut escaped = false;
 
   // NODE_OPTIONS follows shell-like quoting, but it is parsed without a shell.
   for character in value.chars() {
-    if escaped {
-      current.push(character);
-      escaped = false;
-      continue;
-    }
-
-    if character == '\\' {
-      escaped = true;
-      continue;
-    }
-
     if Some(character) == quote {
       quote = None;
       continue;
@@ -271,10 +330,6 @@ fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, CliError> {
     current.push(character);
   }
 
-  if escaped {
-    current.push('\\');
-  }
-
   if quote.is_some() {
     return Err(CliError::new("unterminated quote in NODE_OPTIONS"));
   }
@@ -287,21 +342,54 @@ fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, CliError> {
 }
 
 impl ParseState {
-  fn command(&self) -> Result<NodeCommand, CliError> {
+  fn finish(mut self) -> Result<ParsedState, CliError> {
+    let (command, script_operand_count) = self.command()?;
+    let script_arguments =
+      self.operands.iter().skip(script_operand_count).cloned().collect::<Vec<_>>();
+
+    Ok(ParsedState {
+      command,
+      exec_argv: self.exec_argv,
+      bun_options: self.bun_options,
+      script_arguments,
+    })
+  }
+
+  fn command(&mut self) -> Result<(NodeCommand, usize), CliError> {
     if self.help {
-      return Ok(NodeCommand::Help);
+      return Ok((NodeCommand::Help, 0));
     }
 
     if self.version {
-      return Ok(NodeCommand::Version);
+      return Ok((NodeCommand::Version, 0));
     }
 
     if let Some(command) = &self.inline_command {
-      return Ok(command.clone());
+      let command = if self.print_mode {
+        match command {
+          NodeCommand::Eval(code) | NodeCommand::Print(code) => NodeCommand::Print(code.clone()),
+          command => command.clone(),
+        }
+      } else {
+        command.clone()
+      };
+
+      return Ok((command, 0));
+    }
+
+    if self.print_mode && (!self.ended_by_double_dash || self.operands.is_empty()) {
+      let expression =
+        self.operands.first().cloned().unwrap_or_else(|| OsString::from("undefined"));
+
+      if let Some(expression) = self.operands.first() {
+        self.exec_argv.push(expression.clone());
+      }
+
+      return Ok((NodeCommand::Print(expression), usize::from(!self.operands.is_empty())));
     }
 
     let Some(script) = self.operands.first() else {
-      return Ok(NodeCommand::Direct);
+      return Ok((NodeCommand::Direct, 0));
     };
 
     if script == OsStr::new("inspect") {
@@ -310,13 +398,7 @@ impl ParseState {
       ));
     }
 
-    Ok(NodeCommand::Script(script.clone()))
-  }
-
-  fn script_arguments(&self) -> Vec<OsString> {
-    let skip_script = usize::from(!(self.inline_command.is_some() || self.help || self.version));
-
-    self.operands.iter().skip(skip_script).cloned().collect()
+    Ok((NodeCommand::Script(script.clone()), 1))
   }
 }
 
@@ -348,6 +430,7 @@ mod tests {
       BunodeCommandOption {
         argv0: OsString::from("node"),
         command: NodeCommand::Script(OsString::from("script.js")),
+        exec_argv: vec![OsString::from("--inspect")],
         bun_options: vec![OsString::from("--inspect")],
         script_arguments: vec![OsString::from("--help"), OsString::from("--flag")],
       },
@@ -365,6 +448,7 @@ mod tests {
       BunodeCommandOption {
         argv0: OsString::from("node"),
         command: NodeCommand::Script(OsString::from("script.js")),
+        exec_argv: vec![OsString::from("--inspect=127.0.0.1:9229")],
         bun_options: vec![OsString::from("--inspect=127.0.0.1:9229")],
         script_arguments: Vec::new(),
       },
@@ -382,6 +466,7 @@ mod tests {
       BunodeCommandOption {
         argv0: OsString::from("node"),
         command: NodeCommand::Script(OsString::from("--script.js")),
+        exec_argv: Vec::new(),
         bun_options: Vec::new(),
         script_arguments: vec![OsString::from("--help")],
       },
@@ -399,8 +484,55 @@ mod tests {
       BunodeCommandOption {
         argv0: OsString::from("node"),
         command: NodeCommand::Print(OsString::from("process.argv.slice(1)")),
+        exec_argv: vec![OsString::from("-p"), OsString::from("process.argv.slice(1)")],
         bun_options: Vec::new(),
         script_arguments: vec![OsString::from("first"), OsString::from("--second")],
+      },
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_default_print_expression_to_undefined() -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "-p"])?;
+
+    assert_eq!(options.command, NodeCommand::Print(OsString::from("undefined")),);
+    assert_eq!(options.exec_argv, vec![OsString::from("-p")]);
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_treat_print_after_double_dash_as_script() -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "-p", "--", "script.js", "--flag"])?;
+
+    assert_eq!(
+      options,
+      BunodeCommandOption {
+        argv0: OsString::from("node"),
+        command: NodeCommand::Script(OsString::from("script.js")),
+        exec_argv: vec![OsString::from("-p")],
+        bun_options: Vec::new(),
+        script_arguments: vec![OsString::from("--flag")],
+      },
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_support_print_eval_shortcut() -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "-pe", "1 + 1"])?;
+
+    assert_eq!(
+      options,
+      BunodeCommandOption {
+        argv0: OsString::from("node"),
+        command: NodeCommand::Print(OsString::from("1 + 1")),
+        exec_argv: vec![OsString::from("-pe"), OsString::from("1 + 1")],
+        bun_options: Vec::new(),
+        script_arguments: Vec::new(),
       },
     );
 
@@ -417,6 +549,7 @@ mod tests {
       BunodeCommandOption {
         argv0: OsString::from("node"),
         command: NodeCommand::Script(OsString::from("script.js")),
+        exec_argv: vec![OsString::from("--conditions"), OsString::from("cli")],
         bun_options: vec![OsString::from("--conditions=env"), OsString::from("--conditions=cli")],
         script_arguments: Vec::new(),
       },
@@ -433,6 +566,44 @@ mod tests {
   }
 
   #[test]
+  fn parse_should_reject_env_file_from_node_options() {
+    let error = parse_with_node_options(&["node"], "--env-file .env").unwrap_err();
+
+    assert_eq!(error.to_string(), "bunode: `--env-file` is not allowed in NODE_OPTIONS");
+  }
+
+  #[test]
+  fn parse_should_reject_attached_short_values() {
+    let error = parse_cli(&["node", "-econsole.log(1)"]).unwrap_err();
+
+    assert_eq!(error.to_string(), "bunode: unsupported Node.js option `-econsole.log(1)`",);
+  }
+
+  #[test]
+  fn parse_should_reject_missing_option_value_before_next_flag() {
+    let error = parse_cli(&["node", "--require", "--eval", "0"]).unwrap_err();
+
+    assert_eq!(error.to_string(), "bunode: option `--require` requires a value");
+  }
+
+  #[test]
+  fn parse_should_hide_bunode_options_from_exec_argv() -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "--bun-smol", "--conditions", "cli", "-e", "0"])?;
+
+    assert_eq!(
+      options.exec_argv,
+      vec![
+        OsString::from("--conditions"),
+        OsString::from("cli"),
+        OsString::from("-e"),
+        OsString::from("0"),
+      ],
+    );
+
+    Ok(())
+  }
+
+  #[test]
   fn parse_should_keep_double_quoted_node_options_value() -> Result<(), crate::cli::CliError> {
     let options = parse_with_node_options(&["node", "-e", "0"], "--require \"./with space.js\"")?;
 
@@ -446,6 +617,15 @@ mod tests {
     let options = parse_with_node_options(&["node", "-e", "0"], "--require './preload.js'")?;
 
     assert_eq!(options.bun_options, vec![OsString::from("--preload='./preload.js'")],);
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_preserve_node_options_backslashes() -> Result<(), crate::cli::CliError> {
+    let options = parse_with_node_options(&["node", "-e", "0"], r"--require C:\tmp\preload.js")?;
+
+    assert_eq!(options.bun_options, vec![OsString::from(r"--preload=C:\tmp\preload.js")]);
 
     Ok(())
   }

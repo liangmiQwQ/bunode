@@ -57,9 +57,11 @@ macro_rules! option_spec {
     }
   };
   (@node_options_allowed command) => { false };
+  (@node_options_allowed node_cli) => { false };
   (@node_options_allowed node) => { true };
   (@node_options_allowed bun) => { false };
   (@help_section command) => { HelpSection::Node };
+  (@help_section node_cli) => { HelpSection::Node };
   (@help_section node) => { HelpSection::Node };
   (@help_section bun) => { HelpSection::Bun };
   (@value_name) => { None };
@@ -226,7 +228,7 @@ pub(super) const OPTION_SPECS: &[OptionSpec] = &[
     "...",
   ),
   option_spec!(
-    node,
+    node_cli,
     ["--env-file"],
     None,
     ValueMode::Required,

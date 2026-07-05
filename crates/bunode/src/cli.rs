@@ -6,6 +6,7 @@ use std::{ffi::OsString, fmt, process::ExitCode};
 pub struct BunodeCommandOption {
   pub argv0: OsString,
   pub command: NodeCommand,
+  pub exec_argv: Vec<OsString>,
   pub bun_options: Vec<OsString>,
   pub script_arguments: Vec<OsString>,
 }

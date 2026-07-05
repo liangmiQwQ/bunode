@@ -12,7 +12,12 @@ pub fn bunode_version() -> io::Result<String> {
 }
 
 fn read_bun_output(args: &[&str]) -> io::Result<String> {
-  let output = Command::new(bun::path()?).args(args).output()?;
+  let bun_path = bun::path()?;
+  let bun_directory = bun_path
+    .parent()
+    .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "failed to resolve Bun directory"))?;
+  // Version probes must not execute project bunfig preloads from the caller's cwd.
+  let output = Command::new(&bun_path).current_dir(bun_directory).args(args).output()?;
 
   if !output.status.success() {
     return Err(io::Error::other(format!(

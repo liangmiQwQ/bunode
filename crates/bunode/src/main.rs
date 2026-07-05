@@ -67,23 +67,72 @@ fn run(invocation: &cli::BunodeCommandOption) -> ExitCode {
 
 fn run_bun(invocation: &cli::BunodeCommandOption, mode: BunMode<'_>) -> io::Result<ExitStatus> {
   let mut command = bun::command()?;
-  let preload_path = preload::prepare()?;
-  let args = base::argv::build_bun_args(invocation, &mode, &preload_path);
+  let args = if matches!(mode, BunMode::Repl) {
+    base::argv::build_repl_args()
+  } else {
+    let preload_path = preload::prepare()?;
+    let args = base::argv::build_bun_args(invocation, &mode, &preload_path);
+
+    // Bun sees itself as process.argv[0]; the preload patches Node-facing metadata.
+    command.env(preload::EXEC_PATH_ENV, env::current_exe()?);
+    command.env(preload::ARGV0_ENV, &invocation.argv0);
+    command.env(preload::EXEC_ARGV_ENV, encode_exec_argv_json(&invocation.exec_argv));
+
+    if matches!(mode, BunMode::Stdin) {
+      command.env(preload::DROP_STDIN_ARGV_ENV, "1");
+    }
+
+    args
+  };
 
   command.args(args);
-
-  // Bun sees itself as process.argv[0]; the preload patches Node-facing metadata.
-  command.env(preload::EXEC_PATH_ENV, env::current_exe()?);
-  command.env(preload::ARGV0_ENV, &invocation.argv0);
-
-  if matches!(mode, BunMode::Stdin) {
-    command.env(preload::DROP_STDIN_ARGV_ENV, "1");
-  }
 
   command.status()
 }
 
+fn encode_exec_argv_json(values: &[std::ffi::OsString]) -> String {
+  let values = values
+    .iter()
+    .map(|value| format!("\"{}\"", escape_json_string(&value.to_string_lossy())))
+    .collect::<Vec<_>>()
+    .join(",");
+
+  format!("[{values}]")
+}
+
+fn escape_json_string(value: &str) -> String {
+  let mut result = String::new();
+
+  for character in value.chars() {
+    match character {
+      '"' => result.push_str("\\\""),
+      '\\' => result.push_str("\\\\"),
+      '\n' => result.push_str("\\n"),
+      '\r' => result.push_str("\\r"),
+      '\t' => result.push_str("\\t"),
+      character if character.is_control() => {
+        result.push_str(&format!("\\u{:04x}", u32::from(character)));
+      }
+      character => result.push(character),
+    }
+  }
+
+  result
+}
+
 fn status_exit_code(status: ExitStatus) -> ExitCode {
+  #[cfg(unix)]
+  {
+    use std::os::unix::process::ExitStatusExt;
+
+    if let Some(signal) = status.signal() {
+      let code = 128 + signal;
+      let bounded_code = code.clamp(0, i32::from(u8::MAX));
+
+      return ExitCode::from(u8::try_from(bounded_code).unwrap_or(1));
+    }
+  }
+
   let code = status.code().map_or(1, |code| {
     let bounded_code = code.clamp(0, i32::from(u8::MAX));
 

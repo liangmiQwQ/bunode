@@ -6,6 +6,7 @@ use crate::bun;
 
 pub const EXEC_PATH_ENV: &str = "BUNODE_EXEC_PATH";
 pub const ARGV0_ENV: &str = "BUNODE_ARGV0";
+pub const EXEC_ARGV_ENV: &str = "BUNODE_EXEC_ARGV";
 pub const DROP_STDIN_ARGV_ENV: &str = "BUNODE_DROP_STDIN_ARGV";
 
 const PRELOAD_FILE_NAME: &str = "bunode-preload.js";

@@ -65,11 +65,15 @@ pub fn build_bun_args(
       args.extend(invocation.script_arguments.iter().cloned());
     }
     BunMode::Repl => {
-      args.push(OsString::from("repl"));
+      return build_repl_args();
     }
   }
 
   args
+}
+
+pub fn build_repl_args() -> Vec<OsString> {
+  vec![OsString::from("repl")]
 }
 
 fn push_runtime_flags(args: &mut Vec<OsString>, preload_path: &Path) {
@@ -128,6 +132,7 @@ mod tests {
     BunodeCommandOption {
       argv0: OsString::from("node"),
       command,
+      exec_argv: Vec::new(),
       bun_options: vec![OsString::from("--conditions=node")],
       script_arguments: vec![OsString::from("--flag")],
     }
