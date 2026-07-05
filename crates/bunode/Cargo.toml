@@ -11,5 +11,12 @@ rust-version.workspace = true
 description.workspace = true
 publish = false
 
+[build-dependencies]
+oxc_allocator = { workspace = true }
+oxc_codegen = { workspace = true }
+oxc_minifier = { workspace = true }
+oxc_parser = { workspace = true }
+oxc_span = { workspace = true }
+
 [lints]
 workspace = true

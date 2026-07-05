@@ -9,7 +9,7 @@ pub const ARGV0_ENV: &str = "BUNODE_ARGV0";
 pub const DROP_STDIN_ARGV_ENV: &str = "BUNODE_DROP_STDIN_ARGV";
 
 const PRELOAD_FILE_NAME: &str = "bunode-preload.js";
-const PRELOAD_SOURCE: &[u8] = include_bytes!("preload.js");
+const PRELOAD_SOURCE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/preload.min.js"));
 
 pub fn prepare() -> io::Result<PathBuf> {
   let bun_path = bun::path()?;

@@ -23,3 +23,10 @@ strip = "symbols"
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+oxc_allocator = "0.138.0"
+oxc_codegen = "0.138.0"
+oxc_minifier = "0.138.0"
+oxc_parser = "0.138.0"
+oxc_span = "0.138.0"
