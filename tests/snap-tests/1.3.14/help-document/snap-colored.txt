@@ -1,55 +1,54 @@
 Usage: node [options] [ script.js ] [arguments]
 
 Options:
-  -                           script read from stdin (default if no file name is provided, interactive mode if a tty)
-  --                          indicate the end of node options
-  -h, --help                  print Bunode supported options
-  -v, --version               print Node-compatible Bunode version
-  -e, --eval=...              evaluate script
-  -p, --print=...             evaluate script and print the result
-  -r, --require=...           preload CommonJS module (translated to Bun preload)
-  --import=...                preload ES module (translated to Bun preload)
-  --inspect[=[host:]port]     activate inspector
-  --inspect-brk[=[host:]port] activate inspector and break at start
-  --inspect-wait[=[host:]port]
-                              activate inspector and wait for debugger
-  -C, --conditions=...        pass custom conditions to resolve
-  --cpu-prof                  start CPU profiler
-  --cpu-prof-dir=...          set CPU profile output directory
-  --cpu-prof-interval=...     set CPU profile sampling interval
-  --cpu-prof-name=...         set CPU profile output file name
-  --dns-result-order=...      set default dns.lookup result order
-  --env-file=...              load environment variables from a file
-  --expose-gc                 expose gc on the global object
-  --heap-prof                 write heap profile on exit
-  --heap-prof-dir=...         set heap profile output directory
-  --heap-prof-name=...        set heap profile output file name
-  --no-addons                 disable native addons
-  --no-deprecation            suppress deprecation warnings
-  --throw-deprecation         throw deprecation warnings as exceptions
-  --title=...                 set process title
-  --unhandled-rejections=...  set unhandled rejection mode
-  --use-bundled-ca            use bundled CA store
-  --use-openssl-ca            use OpenSSL CA store
-  --use-system-ca             use system CA store
-  --zero-fill-buffers         zero-fill Buffer.allocUnsafe
+  -                               script read from stdin (default if no file name is provided, interactive mode if a tty)
+  --                              indicate the end of node options
+  -h, --help                      print Bunode supported options
+  -v, --version                   print Node-compatible Bunode version
+  -e, --eval=...                  evaluate script
+  -p, --print=...                 evaluate script and print the result
+  -r, --require=...               preload CommonJS module (translated to Bun preload)
+  --import=...                    preload ES module (translated to Bun preload)
+  --inspect[=[host:]port]         activate inspector
+  --inspect-brk[=[host:]port]     activate inspector and break at start
+  --inspect-wait[=[host:]port]    activate inspector and wait for debugger
+  -C, --conditions=...            pass custom conditions to resolve
+  --cpu-prof                      start CPU profiler
+  --cpu-prof-dir=...              set CPU profile output directory
+  --cpu-prof-interval=...         set CPU profile sampling interval
+  --cpu-prof-name=...             set CPU profile output file name
+  --heap-prof                     write heap profile on exit
+  --heap-prof-dir=...             set heap profile output directory
+  --heap-prof-name=...            set heap profile output file name
+  --dns-result-order=...          set default dns.lookup result order
+  --env-file=...                  load environment variables from a file
+  --expose-gc                     expose gc on the global object
+  --no-addons                     disable native addons
+  --no-deprecation                suppress deprecation warnings
+  --throw-deprecation             throw deprecation warnings as exceptions
+  --title=...                     set process title
+  --unhandled-rejections=...      set unhandled rejection mode
+  --use-bundled-ca                use bundled CA store
+  --use-openssl-ca                use OpenSSL CA store
+  --use-system-ca                 use system CA store
+  --zero-fill-buffers             zero-fill Buffer.allocUnsafe
 
 Bun-specific options:
-  --bun-config=...            specify bunfig.toml path
-  --bun-console-depth=...     set console inspection depth
-  --bun-env-file=...          load Bun environment file
-  --bun-fetch-preconnect=...  preconnect while code is loading
-  --bun-hot                   enable Bun hot reload
-  --bun-install=...           configure Bun auto-install behavior
-  --bun-no-clear-screen       disable reload clear screen behavior
-  --bun-no-env-file           disable automatic .env loading
-  --bun-port=...              set default Bun.serve port
-  --bun-prefer-latest         prefer latest packages in Bun runtime
-  --bun-prefer-offline        prefer offline package resolution
-  --bun-preload=...           run an additional Bun preload
-  --bun-smol                  enable Bun smol mode
-  --bun-user-agent=...        set default HTTP User-Agent
-  --bun-watch                 restart on file changes
+  --bun-config=...                specify bunfig.toml path
+  --bun-console-depth=...         set console inspection depth
+  --bun-env-file=...              load Bun environment file
+  --bun-fetch-preconnect=...      preconnect while code is loading
+  --bun-hot                       enable Bun hot reload
+  --bun-install=...               configure Bun auto-install behavior
+  --bun-no-clear-screen           disable reload clear screen behavior
+  --bun-no-env-file               disable automatic .env loading
+  --bun-port=...                  set default Bun.serve port
+  --bun-prefer-latest             prefer latest packages in Bun runtime
+  --bun-prefer-offline            prefer offline package resolution
+  --bun-preload=...               run an additional Bun preload
+  --bun-smol                      enable Bun smol mode
+  --bun-user-agent=...            set default HTTP User-Agent
+  --bun-watch                     restart on file changes
 
 Environment variables:
-  NODE_OPTIONS                supported Node options are translated before CLI options
+  NODE_OPTIONS                    supported Node options are translated before CLI options

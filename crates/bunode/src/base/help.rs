@@ -1,63 +1,64 @@
-//! Supported Bunode help text.
+//! Supported Bunode help generation.
+
+use super::options::{HelpSection, OPTION_SPECS, OptionSpec, ValueMode};
+
+const OPTION_COLUMN_WIDTH: usize = 31;
+const NODE_SPECIAL_ROWS: &[(&str, &str)] = &[
+  ("-", "script read from stdin (default if no file name is provided, interactive mode if a tty)"),
+  ("--", "indicate the end of node options"),
+];
 
 pub fn print() {
-  print!(
-    "\
-Usage: node [options] [ script.js ] [arguments]
+  println!("Usage: node [options] [ script.js ] [arguments]");
+  println!();
+  println!("Options:");
+  print_rows(NODE_SPECIAL_ROWS.iter().copied());
+  print_option_section(HelpSection::Node);
+  println!();
+  println!("Bun-specific options:");
+  print_option_section(HelpSection::Bun);
+  println!();
+  println!("Environment variables:");
+  print_row("NODE_OPTIONS", "supported Node options are translated before CLI options");
+}
 
-Options:
-  -                           script read from stdin (default if no file name is provided, interactive mode if a tty)
-  --                          indicate the end of node options
-  -h, --help                  print Bunode supported options
-  -v, --version               print Node-compatible Bunode version
-  -e, --eval=...              evaluate script
-  -p, --print=...             evaluate script and print the result
-  -r, --require=...           preload CommonJS module (translated to Bun preload)
-  --import=...                preload ES module (translated to Bun preload)
-  --inspect[=[host:]port]     activate inspector
-  --inspect-brk[=[host:]port] activate inspector and break at start
-  --inspect-wait[=[host:]port]
-                              activate inspector and wait for debugger
-  -C, --conditions=...        pass custom conditions to resolve
-  --cpu-prof                  start CPU profiler
-  --cpu-prof-dir=...          set CPU profile output directory
-  --cpu-prof-interval=...     set CPU profile sampling interval
-  --cpu-prof-name=...         set CPU profile output file name
-  --dns-result-order=...      set default dns.lookup result order
-  --env-file=...              load environment variables from a file
-  --expose-gc                 expose gc on the global object
-  --heap-prof                 write heap profile on exit
-  --heap-prof-dir=...         set heap profile output directory
-  --heap-prof-name=...        set heap profile output file name
-  --no-addons                 disable native addons
-  --no-deprecation            suppress deprecation warnings
-  --throw-deprecation         throw deprecation warnings as exceptions
-  --title=...                 set process title
-  --unhandled-rejections=...  set unhandled rejection mode
-  --use-bundled-ca            use bundled CA store
-  --use-openssl-ca            use OpenSSL CA store
-  --use-system-ca             use system CA store
-  --zero-fill-buffers         zero-fill Buffer.allocUnsafe
+fn print_option_section(section: HelpSection) {
+  let rows = OPTION_SPECS.iter().filter_map(|spec| {
+    let help = spec.help?;
 
-Bun-specific options:
-  --bun-config=...            specify bunfig.toml path
-  --bun-console-depth=...     set console inspection depth
-  --bun-env-file=...          load Bun environment file
-  --bun-fetch-preconnect=...  preconnect while code is loading
-  --bun-hot                   enable Bun hot reload
-  --bun-install=...           configure Bun auto-install behavior
-  --bun-no-clear-screen       disable reload clear screen behavior
-  --bun-no-env-file           disable automatic .env loading
-  --bun-port=...              set default Bun.serve port
-  --bun-prefer-latest         prefer latest packages in Bun runtime
-  --bun-prefer-offline        prefer offline package resolution
-  --bun-preload=...           run an additional Bun preload
-  --bun-smol                  enable Bun smol mode
-  --bun-user-agent=...        set default HTTP User-Agent
-  --bun-watch                 restart on file changes
+    if help.section == section {
+      return Some((format_option(spec), help.description));
+    }
 
-Environment variables:
-  NODE_OPTIONS                supported Node options are translated before CLI options
-"
-  );
+    None
+  });
+
+  print_rows(rows);
+}
+
+fn print_rows(rows: impl IntoIterator<Item = (impl AsRef<str>, &'static str)>) {
+  for (option, description) in rows {
+    print_row(option.as_ref(), description);
+  }
+}
+
+fn print_row(option: &str, description: &str) {
+  println!("  {option:<OPTION_COLUMN_WIDTH$} {description}");
+}
+
+fn format_option(spec: &OptionSpec) -> String {
+  let long = format_long_option(spec);
+
+  spec.short.map_or_else(|| long.clone(), |short| format!("-{short}, {long}"))
+}
+
+fn format_long_option(spec: &OptionSpec) -> String {
+  let long = spec.long[0];
+  let value_name = spec.help.and_then(|help| help.value_name).unwrap_or("...");
+
+  match spec.value {
+    ValueMode::None => long.to_owned(),
+    ValueMode::Required => format!("{long}={value_name}"),
+    ValueMode::OptionalEquals => format!("{long}[={value_name}]"),
+  }
 }
