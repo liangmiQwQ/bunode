@@ -120,6 +120,13 @@ fn parse_tokens(
         return Err(CliError::new(format!("`{token_text}` is not allowed in NODE_OPTIONS")));
       }
 
+      if state.should_capture_print_expression(source) {
+        state.inline_command = Some(NodeCommand::Print(token.clone()));
+        state.exec_argv.push(token);
+        index += 1;
+        continue;
+      }
+
       state.operands.push(token);
       state.operands.extend(tokens[(index + 1)..].iter().cloned());
       break;
@@ -309,7 +316,11 @@ fn apply_option(
   }
 
   match spec.action {
-    OptionAction::Help => state.command_mode = CommandMode::Help,
+    OptionAction::Help => {
+      if state.command_mode != CommandMode::Version {
+        state.command_mode = CommandMode::Help;
+      }
+    }
     OptionAction::Version => state.command_mode = CommandMode::Version,
     OptionAction::Eval => {
       state.inline_command = Some(NodeCommand::Eval(required_action_value(value, spec)?));
@@ -423,6 +434,13 @@ fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, CliError> {
 }
 
 impl ParseState {
+  fn should_capture_print_expression(&self, source: Source) -> bool {
+    source == Source::CommandLine
+      && self.print_mode == PrintMode::Enabled
+      && self.print_operand_mode == PrintOperandMode::Expression
+      && self.inline_command.is_none()
+  }
+
   fn finish(mut self) -> Result<ParsedState, CliError> {
     let (command, script_operand_count) = self.command()?;
     let script_arguments =
@@ -577,6 +595,42 @@ mod tests {
         script_arguments: vec![OsString::from("first"), OsString::from("--second")],
       },
     );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_continue_options_after_print_expression() -> Result<(), crate::cli::CliError> {
+    let options =
+      parse_cli(&["node", "-p", "process.argv.slice(1)", "--conditions=custom", "first"])?;
+
+    assert_eq!(
+      options,
+      BunodeCommandOption {
+        argv0: OsString::from("node"),
+        command: NodeCommand::Print(OsString::from("process.argv.slice(1)")),
+        exec_argv: vec![
+          OsString::from("-p"),
+          OsString::from("process.argv.slice(1)"),
+          OsString::from("--conditions=custom"),
+        ],
+        bun_options: vec![OsString::from("--conditions=custom")],
+        script_arguments: vec![OsString::from("first")],
+      },
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_prefer_version_over_help() -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "--help", "--version"])?;
+
+    assert_eq!(options.command, NodeCommand::Version);
+
+    let options = parse_cli(&["node", "--version", "--help"])?;
+
+    assert_eq!(options.command, NodeCommand::Version);
 
     Ok(())
   }

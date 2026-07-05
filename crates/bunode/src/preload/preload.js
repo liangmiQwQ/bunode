@@ -9,7 +9,12 @@ delete process.env.BUNODE_EXEC_ARGV
 delete process.env.BUNODE_DROP_STDIN_ARGV
 
 if (execPath) {
-  Object.defineProperty(process, 'execPath', { value: execPath, configurable: true })
+  Object.defineProperty(process, 'execPath', {
+    value: execPath,
+    writable: true,
+    enumerable: true,
+    configurable: true
+  })
   process.argv[0] = execPath
 }
 

@@ -1,8 +1,10 @@
 argv0=node
 argv=script.js|--flag|value
 execPath=true
+execPathWritable=true
 internalEnv=true
 argv0=node
 argv=script.js|--|--flag
 execPath=true
+execPathWritable=true
 internalEnv=true

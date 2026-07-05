@@ -18,7 +18,7 @@ pub enum BunMode<'a> {
 
 pub fn validate_script(script: &OsStr) -> Result<(), CliError> {
   if script_requires_explicit_relative_path(script) {
-    return Err(CliError::new(format!(
+    return Err(CliError::failure(format!(
       "script `{}` starts with `-`; pass it with an explicit relative path like `./{}`.",
       script.to_string_lossy(),
       script.to_string_lossy(),
@@ -41,39 +41,42 @@ pub fn build_bun_args(
       args.extend(invocation.bun_options.iter().cloned());
       args.push(OsString::from("-e"));
       args.push((*code).to_os_string());
-      push_user_arguments(&mut args, invocation);
+      push_user_arguments(&mut args, invocation, true);
     }
     BunMode::Print(code) => {
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(OsString::from("-p"));
       args.push((*code).to_os_string());
-      push_user_arguments(&mut args, invocation);
+      push_user_arguments(&mut args, invocation, true);
     }
     BunMode::Script(script) => {
       args.push(OsString::from("run"));
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(normalize_script_name(script));
-      push_user_arguments(&mut args, invocation);
+      push_user_arguments(&mut args, invocation, false);
     }
     BunMode::Stdin => {
       args.push(OsString::from("run"));
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(OsString::from("-"));
-      push_user_arguments(&mut args, invocation);
+      push_user_arguments(&mut args, invocation, false);
     }
     BunMode::Repl => {
-      return build_repl_args();
+      return build_repl_args(invocation);
     }
   }
 
   args
 }
 
-pub fn build_repl_args() -> Vec<OsString> {
-  vec![OsString::from("repl")]
+pub fn build_repl_args(invocation: &BunodeCommandOption) -> Vec<OsString> {
+  let mut args = invocation.bun_options.clone();
+
+  args.push(OsString::from("repl"));
+  args
 }
 
 fn push_runtime_flags(args: &mut Vec<OsString>, preload_path: &Path) {
@@ -83,14 +86,25 @@ fn push_runtime_flags(args: &mut Vec<OsString>, preload_path: &Path) {
   args.push(join_option_value("--preload", preload_path.as_os_str()));
 }
 
-fn push_user_arguments(args: &mut Vec<OsString>, invocation: &BunodeCommandOption) {
+fn push_user_arguments(
+  args: &mut Vec<OsString>,
+  invocation: &BunodeCommandOption,
+  escape_delimiters: bool,
+) {
   if invocation.script_arguments.is_empty() {
     return;
   }
 
   // Bun consumes this separator, preserving a user-supplied `--` as argv data.
   args.push(OsString::from("--"));
-  args.extend(invocation.script_arguments.iter().cloned());
+
+  for argument in &invocation.script_arguments {
+    if escape_delimiters && argument == OsStr::new("--") {
+      args.push(OsString::from("--"));
+    }
+
+    args.push(argument.clone());
+  }
 }
 
 fn normalize_script_name(script: &OsStr) -> OsString {
@@ -134,7 +148,7 @@ mod tests {
   };
 
   use crate::{
-    base::argv::{BunMode, build_bun_args, validate_script},
+    base::argv::{BunMode, build_bun_args, build_repl_args, validate_script},
     cli::{BunodeCommandOption, NodeCommand},
   };
 
@@ -192,6 +206,43 @@ mod tests {
         OsString::from("--"),
         OsString::from("--flag"),
       ],
+    );
+  }
+
+  #[test]
+  fn eval_mode_should_escape_user_delimiters() {
+    let mut invocation = invocation(NodeCommand::Print(OsString::from("process.argv")));
+    invocation.script_arguments =
+      vec![OsString::from("a"), OsString::from("--"), OsString::from("b")];
+    let code = OsString::from("process.argv");
+    let args =
+      build_bun_args(&invocation, &BunMode::Print(code.as_os_str()), Path::new("/tmp/preload.js"));
+
+    assert_eq!(
+      args,
+      vec![
+        OsString::from("--no-install"),
+        OsString::from("--no-env-file"),
+        OsString::from("--preload=/tmp/preload.js"),
+        OsString::from("--conditions=node"),
+        OsString::from("-p"),
+        OsString::from("process.argv"),
+        OsString::from("--"),
+        OsString::from("a"),
+        OsString::from("--"),
+        OsString::from("--"),
+        OsString::from("b"),
+      ],
+    );
+  }
+
+  #[test]
+  fn repl_mode_should_forward_runtime_flags() {
+    let invocation = invocation(NodeCommand::Direct);
+
+    assert_eq!(
+      build_repl_args(&invocation),
+      vec![OsString::from("--conditions=node"), OsString::from("repl")],
     );
   }
 

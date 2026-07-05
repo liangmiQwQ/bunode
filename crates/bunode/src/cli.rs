@@ -25,16 +25,21 @@ pub enum NodeCommand {
 #[derive(Debug, PartialEq, Eq)]
 pub struct CliError {
   message: String,
+  exit_code: u8,
 }
 
 impl CliError {
   pub fn new(message: impl Into<String>) -> Self {
-    Self { message: format!("bunode: {}", message.into()) }
+    Self { message: format!("bunode: {}", message.into()), exit_code: 9 }
+  }
+
+  pub fn failure(message: impl Into<String>) -> Self {
+    Self { message: format!("bunode: {}", message.into()), exit_code: 1 }
   }
 
   pub fn exit(&self) -> ExitCode {
     eprintln!("{self}");
-    ExitCode::from(1)
+    ExitCode::from(self.exit_code)
   }
 }
 

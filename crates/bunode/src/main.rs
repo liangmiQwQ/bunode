@@ -87,7 +87,7 @@ fn run_print_stdin(invocation: &cli::BunodeCommandOption) -> io::Result<ExitStat
 fn run_bun(invocation: &cli::BunodeCommandOption, mode: BunMode<'_>) -> io::Result<ExitStatus> {
   let mut command = bun::command()?;
   let args = if matches!(mode, BunMode::Repl) {
-    base::argv::build_repl_args()
+    base::argv::build_repl_args(invocation)
   } else {
     let preload_path = preload::prepare()?;
     let args = base::argv::build_bun_args(invocation, &mode, &preload_path);
@@ -106,6 +106,18 @@ fn run_bun(invocation: &cli::BunodeCommandOption, mode: BunMode<'_>) -> io::Resu
 
   command.args(args);
 
+  run_configured_bun(command)
+}
+
+#[cfg(unix)]
+fn run_configured_bun(mut command: std::process::Command) -> io::Result<ExitStatus> {
+  use std::os::unix::process::CommandExt;
+
+  Err(command.exec())
+}
+
+#[cfg(not(unix))]
+fn run_configured_bun(mut command: std::process::Command) -> io::Result<ExitStatus> {
   command.status()
 }
 
