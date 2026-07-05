@@ -24,3 +24,5 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 
+[workspace.dependencies]
+clap = "4.6.1"
