@@ -5,11 +5,11 @@
 
 use std::{
   env,
-  ffi::{OsStr, OsString},
   io::{self, IsTerminal},
-  path::Path,
   process::{ExitCode, ExitStatus},
 };
+
+use base::argv::BunMode;
 
 mod base;
 mod bun;
@@ -44,8 +44,8 @@ fn run(invocation: &cli::BunodeCommandOption) -> ExitCode {
     cli::NodeCommand::Eval(code) => run_bun(invocation, BunMode::Eval(code)),
     cli::NodeCommand::Print(code) => run_bun(invocation, BunMode::Print(code)),
     cli::NodeCommand::Script(script) => {
-      if script_requires_explicit_relative_path(script) {
-        return dash_script_error(script);
+      if let Err(error) = base::argv::validate_script(script) {
+        return error.exit();
       }
 
       run_bun(invocation, BunMode::Script(script))
@@ -65,19 +65,10 @@ fn run(invocation: &cli::BunodeCommandOption) -> ExitCode {
   }
 }
 
-#[derive(Clone, Copy)]
-enum BunMode<'a> {
-  Eval(&'a OsStr),
-  Print(&'a OsStr),
-  Script(&'a OsStr),
-  Stdin,
-  Repl,
-}
-
 fn run_bun(invocation: &cli::BunodeCommandOption, mode: BunMode<'_>) -> io::Result<ExitStatus> {
   let mut command = bun::command()?;
   let preload_path = preload::prepare()?;
-  let args = build_bun_args(invocation, &mode, &preload_path);
+  let args = base::argv::build_bun_args(invocation, &mode, &preload_path);
 
   command.args(args);
 
@@ -90,99 +81,6 @@ fn run_bun(invocation: &cli::BunodeCommandOption, mode: BunMode<'_>) -> io::Resu
   }
 
   command.status()
-}
-
-fn build_bun_args(
-  invocation: &cli::BunodeCommandOption,
-  mode: &BunMode<'_>,
-  preload_path: &Path,
-) -> Vec<OsString> {
-  let mut args = Vec::new();
-
-  match mode {
-    BunMode::Eval(code) => {
-      push_runtime_flags(&mut args, preload_path);
-      args.extend(invocation.bun_options.iter().cloned());
-      args.push(OsString::from("-e"));
-      args.push((*code).to_os_string());
-      args.extend(invocation.script_arguments.iter().cloned());
-    }
-    BunMode::Print(code) => {
-      push_runtime_flags(&mut args, preload_path);
-      args.extend(invocation.bun_options.iter().cloned());
-      args.push(OsString::from("-p"));
-      args.push((*code).to_os_string());
-      args.extend(invocation.script_arguments.iter().cloned());
-    }
-    BunMode::Script(script) => {
-      args.push(OsString::from("run"));
-      push_runtime_flags(&mut args, preload_path);
-      args.extend(invocation.bun_options.iter().cloned());
-      args.push(normalize_script_name(script));
-      args.extend(invocation.script_arguments.iter().cloned());
-    }
-    BunMode::Stdin => {
-      args.push(OsString::from("run"));
-      push_runtime_flags(&mut args, preload_path);
-      args.extend(invocation.bun_options.iter().cloned());
-      args.push(OsString::from("-"));
-      args.extend(invocation.script_arguments.iter().cloned());
-    }
-    BunMode::Repl => {
-      args.push(OsString::from("repl"));
-    }
-  }
-
-  args
-}
-
-fn push_runtime_flags(args: &mut Vec<OsString>, preload_path: &Path) {
-  // Defaults go before user-translated flags so explicit Bun options can override them.
-  args.push(OsString::from("--no-install"));
-  args.push(OsString::from("--no-env-file"));
-  args.push(join_option_value("--preload", preload_path.as_os_str()));
-}
-
-fn normalize_script_name(script: &OsStr) -> OsString {
-  if script == OsStr::new("-") {
-    return OsString::from("-");
-  }
-
-  let script_text = script.to_string_lossy();
-
-  if script_text.contains('/') || script_text.contains('\\') {
-    return script.to_os_string();
-  }
-
-  let mut normalized = OsString::from(if cfg!(windows) { r".\" } else { "./" });
-  normalized.push(script);
-  normalized
-}
-
-fn script_requires_explicit_relative_path(script: &OsStr) -> bool {
-  if script == OsStr::new("-") {
-    return false;
-  }
-
-  let script = script.to_string_lossy();
-
-  script.starts_with('-') && !script.contains('/') && !script.contains('\\')
-}
-
-fn dash_script_error(script: &OsStr) -> ExitCode {
-  eprintln!(
-    "bunode: script `{}` starts with `-`; pass it with an explicit relative path like `./{}`.",
-    script.to_string_lossy(),
-    script.to_string_lossy(),
-  );
-  ExitCode::from(1)
-}
-
-fn join_option_value(name: &str, value: &OsStr) -> OsString {
-  let mut option = OsString::from(name);
-  option.push("=");
-  option.push(value);
-  option
 }
 
 fn status_exit_code(status: ExitStatus) -> ExitCode {
@@ -198,66 +96,4 @@ fn status_exit_code(status: ExitStatus) -> ExitCode {
 fn io_error_exit(error: &io::Error) -> ExitCode {
   eprintln!("bunode: {error}");
   ExitCode::from(1)
-}
-
-#[cfg(test)]
-mod tests {
-  use std::{ffi::OsString, path::Path};
-
-  use super::{BunMode, build_bun_args};
-  use crate::cli::{BunodeCommandOption, NodeCommand};
-
-  fn invocation(command: NodeCommand) -> BunodeCommandOption {
-    BunodeCommandOption {
-      argv0: OsString::from("node"),
-      command,
-      bun_options: vec![OsString::from("--conditions=node")],
-      script_arguments: vec![OsString::from("--flag")],
-    }
-  }
-
-  #[test]
-  fn script_mode_should_use_bun_run_with_safe_defaults() {
-    let invocation = invocation(NodeCommand::Script(OsString::from("script.js")));
-    let script = OsString::from("script.js");
-    let args = build_bun_args(
-      &invocation,
-      &BunMode::Script(script.as_os_str()),
-      Path::new("/tmp/preload.js"),
-    );
-
-    assert_eq!(
-      args,
-      vec![
-        OsString::from("run"),
-        OsString::from("--no-install"),
-        OsString::from("--no-env-file"),
-        OsString::from("--preload=/tmp/preload.js"),
-        OsString::from("--conditions=node"),
-        OsString::from(if cfg!(windows) { r".\script.js" } else { "./script.js" }),
-        OsString::from("--flag"),
-      ],
-    );
-  }
-
-  #[test]
-  fn eval_mode_should_not_use_bun_run() {
-    let invocation = invocation(NodeCommand::Print(OsString::from("1 + 1")));
-    let code = OsString::from("1 + 1");
-    let args =
-      build_bun_args(&invocation, &BunMode::Print(code.as_os_str()), Path::new("/tmp/preload.js"));
-
-    assert_eq!(
-      args,
-      vec![
-        OsString::from("--no-install"),
-        OsString::from("--no-env-file"),
-        OsString::from("--preload=/tmp/preload.js"),
-        OsString::from("--conditions=node"),
-        OsString::from("-p"),
-        OsString::from("1 + 1"),
-        OsString::from("--flag"),
-      ],
-    );
-  }
 }
