@@ -1,0 +1,3 @@
+{
+  "commands": ["node --import ./esm.mjs --require ./cjs.cjs -e \"0\""]
+}

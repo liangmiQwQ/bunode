@@ -17,6 +17,7 @@ pub enum NodeCommand {
   Version,
   Eval(OsString),
   Print(OsString),
+  PrintStdin,
   Script(OsString),
   Direct,
 }

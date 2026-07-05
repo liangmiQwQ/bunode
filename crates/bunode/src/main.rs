@@ -5,8 +5,9 @@
 
 use std::{
   env,
+  ffi::OsStr,
   fmt::Write as _,
-  io::{self, IsTerminal},
+  io::{self, IsTerminal, Read},
   process::{ExitCode, ExitStatus},
 };
 
@@ -44,6 +45,7 @@ fn run(invocation: &cli::BunodeCommandOption) -> ExitCode {
     }
     cli::NodeCommand::Eval(code) => run_bun(invocation, BunMode::Eval(code)),
     cli::NodeCommand::Print(code) => run_bun(invocation, BunMode::Print(code)),
+    cli::NodeCommand::PrintStdin => run_print_stdin(invocation),
     cli::NodeCommand::Script(script) => {
       if let Err(error) = base::argv::validate_script(script) {
         return error.exit();
@@ -64,6 +66,22 @@ fn run(invocation: &cli::BunodeCommandOption) -> ExitCode {
     Ok(status) => status_exit_code(status),
     Err(error) => io_error_exit(&error),
   }
+}
+
+fn run_print_stdin(invocation: &cli::BunodeCommandOption) -> io::Result<ExitStatus> {
+  if io::stdin().is_terminal() {
+    return run_bun(invocation, BunMode::Print(OsStr::new("undefined")));
+  }
+
+  let mut code = String::new();
+  io::stdin().read_to_string(&mut code)?;
+
+  if code.is_empty() {
+    return run_bun(invocation, BunMode::Print(OsStr::new("undefined")));
+  }
+
+  let code = std::ffi::OsString::from(code);
+  run_bun(invocation, BunMode::Print(code.as_os_str()))
 }
 
 fn run_bun(invocation: &cli::BunodeCommandOption, mode: BunMode<'_>) -> io::Result<ExitStatus> {

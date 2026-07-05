@@ -23,9 +23,16 @@ pub(super) enum OptionAction {
   Version,
   Eval,
   Print,
+  Preload(PreloadKind),
   ForwardFlag(&'static str),
   ForwardValue(&'static str),
   ForwardOptionalValue(&'static str),
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum PreloadKind {
+  CommonJs,
+  EsModule,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -108,7 +115,7 @@ pub(super) const OPTION_SPECS: &[OptionSpec] = &[
     ["--require"],
     Some('r'),
     ValueMode::Required,
-    OptionAction::ForwardValue("--preload"),
+    OptionAction::Preload(PreloadKind::CommonJs),
     "preload CommonJS module (translated to Bun preload)",
     "...",
   ),
@@ -117,7 +124,7 @@ pub(super) const OPTION_SPECS: &[OptionSpec] = &[
     ["--import"],
     None,
     ValueMode::Required,
-    OptionAction::ForwardValue("--preload"),
+    OptionAction::Preload(PreloadKind::EsModule),
     "preload ES module (translated to Bun preload)",
     "...",
   ),

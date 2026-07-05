@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::cli::{BunodeCommandOption, CliError, NodeCommand};
 
-use super::options::{HelpSection, OPTION_SPECS, OptionAction, OptionSpec, ValueMode};
+use super::options::{HelpSection, OPTION_SPECS, OptionAction, OptionSpec, PreloadKind, ValueMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {
@@ -51,6 +51,8 @@ struct ParseState {
   operand_boundary: OperandBoundary,
   exec_argv: Vec<OsString>,
   bun_options: Vec<OsString>,
+  common_js_preloads: Vec<OsString>,
+  es_module_preloads: Vec<OsString>,
   operands: Vec<OsString>,
 }
 
@@ -168,7 +170,12 @@ fn parse_long_option(
           (Some(value), index + 2)
         }
       }
-      ValueMode::OptionalEquals => (inline_value.map(OsString::from), index + 1),
+      ValueMode::OptionalEquals => match inline_value {
+        Some("") => {
+          return Err(CliError::new(format!("option `{name}` requires a value")));
+        }
+        value => (value.map(OsString::from), index + 1),
+      },
     }
   };
 
@@ -311,6 +318,14 @@ fn apply_option(
       // Node accepts `--print=<value>` but still reads the expression from argv operands.
       state.print_mode = PrintMode::Enabled;
     }
+    OptionAction::Preload(kind) => {
+      let value = join_option_value("--preload", required_action_value(value, spec)?);
+
+      match kind {
+        PreloadKind::CommonJs => state.common_js_preloads.push(value),
+        PreloadKind::EsModule => state.es_module_preloads.push(value),
+      }
+    }
     OptionAction::ForwardFlag(name) => state.bun_options.push(OsString::from(name)),
     OptionAction::ForwardValue(name) => {
       let value = required_action_value(value, spec)?;
@@ -412,13 +427,11 @@ impl ParseState {
     let (command, script_operand_count) = self.command()?;
     let script_arguments =
       self.operands.iter().skip(script_operand_count).cloned().collect::<Vec<_>>();
+    let mut bun_options = self.bun_options;
+    bun_options.extend(self.common_js_preloads);
+    bun_options.extend(self.es_module_preloads);
 
-    Ok(ParsedState {
-      command,
-      exec_argv: self.exec_argv,
-      bun_options: self.bun_options,
-      script_arguments,
-    })
+    Ok(ParsedState { command, exec_argv: self.exec_argv, bun_options, script_arguments })
   }
 
   fn command(&mut self) -> Result<(NodeCommand, usize), CliError> {
@@ -454,7 +467,13 @@ impl ParseState {
         self.exec_argv.push(expression.clone());
       }
 
-      return Ok((NodeCommand::Print(expression), usize::from(!self.operands.is_empty())));
+      let command = if self.operands.is_empty() {
+        NodeCommand::PrintStdin
+      } else {
+        NodeCommand::Print(expression)
+      };
+
+      return Ok((command, usize::from(!self.operands.is_empty())));
     }
 
     let Some(script) = self.operands.first() else {
@@ -563,10 +582,10 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_default_print_expression_to_undefined() -> Result<(), crate::cli::CliError> {
+  fn parse_should_defer_print_without_expression_to_stdin() -> Result<(), crate::cli::CliError> {
     let options = parse_cli(&["node", "-p"])?;
 
-    assert_eq!(options.command, NodeCommand::Print(OsString::from("undefined")),);
+    assert_eq!(options.command, NodeCommand::PrintStdin);
     assert_eq!(options.exec_argv, vec![OsString::from("-p")]);
 
     Ok(())
@@ -685,6 +704,13 @@ mod tests {
   }
 
   #[test]
+  fn parse_should_reject_empty_inline_optional_value() {
+    let error = parse_cli(&["node", "--inspect="]).unwrap_err();
+
+    assert_eq!(error.to_string(), "bunode: option `--inspect` requires a value");
+  }
+
+  #[test]
   fn parse_should_validate_env_file_before_early_exit() {
     let error =
       parse_cli(&["node", "--env-file", "missing-bunode-env-file.env", "--version"]).unwrap_err();
@@ -704,6 +730,20 @@ mod tests {
         OsString::from("-e"),
         OsString::from("0"),
       ],
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_run_common_js_preloads_before_es_module_imports()
+  -> Result<(), crate::cli::CliError> {
+    let options =
+      parse_cli(&["node", "--import", "./esm.mjs", "--require", "./cjs.cjs", "-e", "0"])?;
+
+    assert_eq!(
+      options.bun_options,
+      vec![OsString::from("--preload=./cjs.cjs"), OsString::from("--preload=./esm.mjs")],
     );
 
     Ok(())

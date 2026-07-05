@@ -1,6 +1,7 @@
 {
   "commands": [
     "node -p",
+    "node stdin-driver.js",
     "node -pe \"1 + 1\"",
     "node --print=ignored \"\\\"expr\\\"\"",
     "node -p -- script.js --flag"

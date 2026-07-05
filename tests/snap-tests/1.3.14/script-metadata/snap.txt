@@ -2,3 +2,7 @@ argv0=node
 argv=script.js|--flag|value
 execPath=true
 internalEnv=true
+argv0=node
+argv=script.js|--|--flag
+execPath=true
+internalEnv=true

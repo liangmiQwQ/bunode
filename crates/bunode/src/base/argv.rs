@@ -41,28 +41,28 @@ pub fn build_bun_args(
       args.extend(invocation.bun_options.iter().cloned());
       args.push(OsString::from("-e"));
       args.push((*code).to_os_string());
-      args.extend(invocation.script_arguments.iter().cloned());
+      push_user_arguments(&mut args, invocation);
     }
     BunMode::Print(code) => {
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(OsString::from("-p"));
       args.push((*code).to_os_string());
-      args.extend(invocation.script_arguments.iter().cloned());
+      push_user_arguments(&mut args, invocation);
     }
     BunMode::Script(script) => {
       args.push(OsString::from("run"));
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(normalize_script_name(script));
-      args.extend(invocation.script_arguments.iter().cloned());
+      push_user_arguments(&mut args, invocation);
     }
     BunMode::Stdin => {
       args.push(OsString::from("run"));
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(OsString::from("-"));
-      args.extend(invocation.script_arguments.iter().cloned());
+      push_user_arguments(&mut args, invocation);
     }
     BunMode::Repl => {
       return build_repl_args();
@@ -81,6 +81,16 @@ fn push_runtime_flags(args: &mut Vec<OsString>, preload_path: &Path) {
   args.push(OsString::from("--no-install"));
   args.push(OsString::from("--no-env-file"));
   args.push(join_option_value("--preload", preload_path.as_os_str()));
+}
+
+fn push_user_arguments(args: &mut Vec<OsString>, invocation: &BunodeCommandOption) {
+  if invocation.script_arguments.is_empty() {
+    return;
+  }
+
+  // Bun consumes this separator, preserving a user-supplied `--` as argv data.
+  args.push(OsString::from("--"));
+  args.extend(invocation.script_arguments.iter().cloned());
 }
 
 fn normalize_script_name(script: &OsStr) -> OsString {
@@ -157,6 +167,7 @@ mod tests {
         OsString::from("--preload=/tmp/preload.js"),
         OsString::from("--conditions=node"),
         OsString::from(if cfg!(windows) { r".\script.js" } else { "./script.js" }),
+        OsString::from("--"),
         OsString::from("--flag"),
       ],
     );
@@ -178,6 +189,7 @@ mod tests {
         OsString::from("--conditions=node"),
         OsString::from("-p"),
         OsString::from("1 + 1"),
+        OsString::from("--"),
         OsString::from("--flag"),
       ],
     );
