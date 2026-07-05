@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunode.dev/snap-tests.steps.schema.json",
+  "title": "Bunode snap test steps",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "commands": {
+      "description": "Shell commands run from the snap test directory. Combined output is compared with snap.txt and snap-colored.txt.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "ignore": {
+      "description": "Supported Node.js process.platform values where this snap test should be skipped.",
+      "type": "array",
+      "items": {
+        "enum": ["darwin", "linux", "win32"],
+        "markdownEnumDescriptions": ["macOS (`darwin`)", "Linux (`linux`)", "Windows (`win32`)"]
+      },
+      "uniqueItems": true
+    },
+    "after": {
+      "description": "Shell cleanup commands run from the snap test directory after each snapshot phase.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

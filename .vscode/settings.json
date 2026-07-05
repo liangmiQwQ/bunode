@@ -10,5 +10,12 @@
     "package.json": "pnpm*, tsconfig*, .node-version, VERSION_INFO, bumpp.config.ts",
     "Cargo.toml": "Cargo.lock, .rustfmt.toml, rust-toolchain.toml, .cargo",
     "README.md": "CONTRIBUTING.md, LICENSE, AGENTS.md, CLAUDE.md"
-  }
+  },
+
+  "json.schemas": [
+    {
+      "fileMatch": ["/tests/snap-tests/*/*/steps.json"],
+      "url": "./tests/snap-tests.schema.json"
+    }
+  ]
 }

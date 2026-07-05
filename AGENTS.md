@@ -33,6 +33,8 @@ Use pnpm catalog for workspace package dependencies. Keep dependency versions in
 Rust tasks are also defined in Vite+ (Vite Task), in project root's `vite.config.ts`.
 Run `vpr check` (lint and format for both Rust and JavaScript) and `vpr test` after you make changes.
 
+Core wrapper snap tests run through Vite+ and compare both plain and forced-color CLI output. Keep their steps declarative and schema-backed. They are defined in `tests/snap-tests/<bun-ver>/<project-name>`. If a test can be done in both Rust util test and snap tests, prefer snap tests.
+
 Keep AGENTS.md updated with the project codebase. Consider if there is need to modify AGENTS.md after your changes. Don't store detail things like file structure or project implementation details in AGENTS.md.
 
 Keep code functional. Never use classes. Write simple code and make function reusable if possible. Use Unix philosophy to design your code. For a function with multiple steps, use comment to divide, like `// 1. Do something first`, `// 2. Do something second`
