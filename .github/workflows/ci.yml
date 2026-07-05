@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Prevent MSVC vctip.exe from keeping Vite Task stdio handles open on Windows.
+  VSCMD_SKIP_SENDTELEMETRY: '1'
+
 jobs:
   check:
     name: Check
