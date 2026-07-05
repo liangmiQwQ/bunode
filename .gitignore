@@ -1,8 +1,8 @@
 node_modules
 dist
 target
+.dev
 .DS_Store
 .env
 .env.*
 !.env.example
-

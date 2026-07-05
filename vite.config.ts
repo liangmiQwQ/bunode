@@ -1,10 +1,20 @@
 import { base } from '@liangmi/vp-config'
 
-const cargoTask = { input: [{ auto: true }, '!target/**'], output: [] }
+const cargoTask = { input: [{ auto: true }, '!target/**', '!.dev/**'], output: [] }
 
 export default base({
   run: {
     tasks: {
+      'build:rs': {
+        command: 'cargo build -p bunode',
+        ...cargoTask,
+        output: [{ auto: true }]
+      },
+      dev: {
+        command: 'node scripts/setup-dev.ts',
+        dependsOn: ['build:rs'],
+        cache: false
+      },
       test: {
         command: ['vp test', 'cargo test --workspace'],
         ...cargoTask
