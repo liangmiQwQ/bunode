@@ -61,7 +61,7 @@ where
 }
 
 pub fn print_help() {
-  print!("Hello, World");
+  println!("Hello, World");
 }
 
 #[cfg(test)]
