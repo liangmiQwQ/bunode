@@ -18,7 +18,12 @@ if (argv0) {
 }
 
 if (execArgv) {
-  Object.defineProperty(process, 'execArgv', { value: JSON.parse(execArgv), configurable: true })
+  Object.defineProperty(process, 'execArgv', {
+    value: JSON.parse(execArgv),
+    writable: true,
+    enumerable: true,
+    configurable: true
+  })
 }
 
 if (dropStdinArgv && process.argv[1] === '-') {

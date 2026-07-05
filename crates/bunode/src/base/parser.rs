@@ -1,6 +1,7 @@
 //! Node option parsing and translation into Bun runtime flags.
 
 use std::ffi::{OsStr, OsString};
+use std::path::Path;
 
 use crate::cli::{BunodeCommandOption, CliError, NodeCommand};
 
@@ -28,6 +29,13 @@ enum PrintMode {
 }
 
 #[derive(Default, PartialEq, Eq)]
+enum PrintOperandMode {
+  #[default]
+  Expression,
+  Script,
+}
+
+#[derive(Default, PartialEq, Eq)]
 enum OperandBoundary {
   #[default]
   ScriptPosition,
@@ -39,6 +47,7 @@ struct ParseState {
   command_mode: CommandMode,
   inline_command: Option<NodeCommand>,
   print_mode: PrintMode,
+  print_operand_mode: PrintOperandMode,
   operand_boundary: OperandBoundary,
   exec_argv: Vec<OsString>,
   bun_options: Vec<OsString>,
@@ -149,6 +158,10 @@ fn parse_long_option(
       }
       ValueMode::Required => {
         if let Some(value) = inline_value {
+          if value.is_empty() {
+            return Err(CliError::new(format!("option `{name}` requires a value")));
+          }
+
           (Some(OsString::from(value)), index + 1)
         } else {
           let value = required_next_token(tokens, index + 1, name)?;
@@ -281,6 +294,13 @@ fn apply_option(
     return Err(CliError::new(format!("`{name}` is not allowed in NODE_OPTIONS")));
   }
 
+  if state.print_mode == PrintMode::Enabled
+    && state.inline_command.is_none()
+    && !matches!(spec.action, OptionAction::Print)
+  {
+    state.print_operand_mode = PrintOperandMode::Script;
+  }
+
   match spec.action {
     OptionAction::Help => state.command_mode = CommandMode::Help,
     OptionAction::Version => state.command_mode = CommandMode::Version,
@@ -293,7 +313,13 @@ fn apply_option(
     }
     OptionAction::ForwardFlag(name) => state.bun_options.push(OsString::from(name)),
     OptionAction::ForwardValue(name) => {
-      state.bun_options.push(join_option_value(name, required_action_value(value, spec)?));
+      let value = required_action_value(value, spec)?;
+
+      if name == "--env-file" {
+        validate_env_file(&value)?;
+      }
+
+      state.bun_options.push(join_option_value(name, value));
     }
     OptionAction::ForwardOptionalValue(name) => {
       state
@@ -319,6 +345,16 @@ fn join_option_value(name: &str, value: OsString) -> OsString {
   option
 }
 
+fn validate_env_file(path: &OsStr) -> Result<(), CliError> {
+  let path = Path::new(path);
+
+  if path.is_file() {
+    return Ok(());
+  }
+
+  Err(CliError::new(format!("{}: not found", path.display())))
+}
+
 fn unsupported_option(option: &str) -> CliError {
   CliError::new(format!("unsupported Node.js option `{option}`"))
 }
@@ -330,7 +366,15 @@ fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, CliError> {
   let mut quote = None;
 
   // NODE_OPTIONS follows shell-like quoting, but it is parsed without a shell.
-  for character in value.chars() {
+  let mut characters = value.chars().peekable();
+
+  while let Some(character) = characters.next() {
+    if quote.is_some() && character == '\\' && characters.peek() == Some(&'"') {
+      characters.next();
+      current.push('"');
+      continue;
+    }
+
     if Some(character) == quote {
       quote = None;
       continue;
@@ -401,6 +445,7 @@ impl ParseState {
 
     if self.print_mode == PrintMode::Enabled
       && (self.operand_boundary != OperandBoundary::DoubleDash || self.operands.is_empty())
+      && (self.print_operand_mode == PrintOperandMode::Expression || self.operands.is_empty())
     {
       let expression =
         self.operands.first().cloned().unwrap_or_else(|| OsString::from("undefined"));
@@ -546,6 +591,28 @@ mod tests {
   }
 
   #[test]
+  fn parse_should_treat_print_operand_after_option_as_script() -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "-p", "--conditions", "custom", "script.js", "--flag"])?;
+
+    assert_eq!(
+      options,
+      BunodeCommandOption {
+        argv0: OsString::from("node"),
+        command: NodeCommand::Script(OsString::from("script.js")),
+        exec_argv: vec![
+          OsString::from("-p"),
+          OsString::from("--conditions"),
+          OsString::from("custom"),
+        ],
+        bun_options: vec![OsString::from("--conditions=custom")],
+        script_arguments: vec![OsString::from("--flag")],
+      },
+    );
+
+    Ok(())
+  }
+
+  #[test]
   fn parse_should_support_print_eval_shortcut() -> Result<(), crate::cli::CliError> {
     let options = parse_cli(&["node", "-pe", "1 + 1"])?;
 
@@ -611,6 +678,21 @@ mod tests {
   }
 
   #[test]
+  fn parse_should_reject_empty_inline_required_value() {
+    let error = parse_cli(&["node", "--eval="]).unwrap_err();
+
+    assert_eq!(error.to_string(), "bunode: option `--eval` requires a value");
+  }
+
+  #[test]
+  fn parse_should_validate_env_file_before_early_exit() {
+    let error =
+      parse_cli(&["node", "--env-file", "missing-bunode-env-file.env", "--version"]).unwrap_err();
+
+    assert_eq!(error.to_string(), "bunode: missing-bunode-env-file.env: not found");
+  }
+
+  #[test]
   fn parse_should_hide_bunode_options_from_exec_argv() -> Result<(), crate::cli::CliError> {
     let options = parse_cli(&["node", "--bun-smol", "--conditions", "cli", "-e", "0"])?;
 
@@ -650,6 +732,15 @@ mod tests {
     let options = parse_with_node_options(&["node", "-e", "0"], r"--require C:\tmp\preload.js")?;
 
     assert_eq!(options.bun_options, vec![OsString::from(r"--preload=C:\tmp\preload.js")]);
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_keep_escaped_double_quote_in_node_options() -> Result<(), crate::cli::CliError> {
+    let options = parse_with_node_options(&["node", "-e", "0"], r#"--require "./x\" y.js""#)?;
+
+    assert_eq!(options.bun_options, vec![OsString::from(r#"--preload=./x" y.js"#)]);
 
     Ok(())
   }
