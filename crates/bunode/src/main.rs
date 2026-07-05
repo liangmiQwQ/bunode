@@ -11,6 +11,7 @@ use std::{
   process::{ExitCode, ExitStatus},
 };
 
+mod base;
 mod bun;
 mod cli;
 mod preload;
@@ -19,7 +20,7 @@ mod version;
 fn main() -> ExitCode {
   let node_options = env::var_os("NODE_OPTIONS");
 
-  match cli::parse(env::args_os(), node_options) {
+  match base::parse(env::args_os(), node_options) {
     Ok(options) => run(&options),
     Err(error) => error.exit(),
   }
@@ -28,7 +29,7 @@ fn main() -> ExitCode {
 fn run(invocation: &cli::BunodeCommandOption) -> ExitCode {
   let result = match &invocation.command {
     cli::NodeCommand::Help => {
-      cli::print_help();
+      base::help::print();
       return ExitCode::SUCCESS;
     }
     cli::NodeCommand::Version => {
@@ -208,7 +209,7 @@ mod tests {
         OsString::from("--no-env-file"),
         OsString::from("--preload=/tmp/preload.js"),
         OsString::from("--conditions=node"),
-        OsString::from("./script.js"),
+        OsString::from(if cfg!(windows) { r".\script.js" } else { "./script.js" }),
         OsString::from("--flag"),
       ],
     );
