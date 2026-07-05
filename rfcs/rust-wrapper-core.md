@@ -96,3 +96,31 @@ tips: Bunode is a Node.js compatibility layer for Bun. Your using Node.js v26.3.
 ```
 
 Different bun versions may also have different levels of Node.js compatibility, we change the detail behavior based on Bun's real version in codebase.
+
+## Project layout
+
+This is only for reference, it needn't be strict followed. And this part should be removed while the feature is done. (For future maintaining)
+
+```tree
+crates/bunode/src
+├── preload
+│   ├── mod.rs           # Expose the way to inject `--prefix` flag and the file, generate preload files.
+│   ├── minify.rs        # Build time macro, reprint and minify the preload with Oxc, don't read the file at runtime.
+│   └── preload.js       # The preload, will be checked by Vite+, can disable some lint rules for minimal size.
+├── base                 # The option translating, error, panic and warn handling (CORE PART)
+│   ├── mod.rs           # We plan to support Bun v1.3.14 as the baseline.
+│   ├── help.rs
+│   └── ...              # About the project layout there, I don't have a certain idea
+│                        # Maybe we should divide options / env vars to different categories (by level of compatibility)
+│                        # We'd better to make an extendable system, so we can handle Bun's future release
+│
+├── version.rs           # Handle version (According to the document above)
+├── bun.rs               # Call the underlying bun binary
+├── cli.rs               # Define Bun-version unrelated universal CLI options and CLI parser
+│                        # At the moment, cli.rs only defines CLI options struct.
+│                        # But for the future integration, there are options we can't make sure directly, and
+│                        # some is available on one version and unavailable in another version. So you need to
+│                        # refactor it as an Vec based, and parse and handle the options on our own side.
+│
+└── main.rs              # The entry of the program
+```
