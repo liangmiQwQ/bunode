@@ -30,10 +30,10 @@ struct NodeCommand {
 
 #[derive(Debug, PartialEq, Eq, Args)]
 pub struct NodeOptions {
-  #[clap(short = 'h', long, exclusive = true)]
+  #[clap(short = 'h', long)]
   pub help: bool,
 
-  #[arg(short = 'v', long, exclusive = true)]
+  #[arg(short = 'v', long)]
   pub version: bool,
 
   #[arg(long, value_name = "host:port", num_args = 0..=1, require_equals = true, default_missing_value = "", value_parser = OsStringValueParser::new())]
