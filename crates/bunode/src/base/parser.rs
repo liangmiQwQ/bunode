@@ -255,7 +255,7 @@ fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, CliError> {
       continue;
     }
 
-    if quote.is_none() && (character == '\'' || character == '"') {
+    if quote.is_none() && character == '"' {
       quote = Some(character);
       continue;
     }
@@ -433,10 +433,19 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_keep_quoted_node_options_value() -> Result<(), crate::cli::CliError> {
-    let options = parse_with_node_options(&["node", "-e", "0"], "--require './with space.js'")?;
+  fn parse_should_keep_double_quoted_node_options_value() -> Result<(), crate::cli::CliError> {
+    let options = parse_with_node_options(&["node", "-e", "0"], "--require \"./with space.js\"")?;
 
     assert_eq!(options.bun_options, vec![OsString::from("--preload=./with space.js")],);
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_keep_single_quotes_as_node_options_literal() -> Result<(), crate::cli::CliError> {
+    let options = parse_with_node_options(&["node", "-e", "0"], "--require './preload.js'")?;
+
+    assert_eq!(options.bun_options, vec![OsString::from("--preload='./preload.js'")],);
 
     Ok(())
   }
