@@ -1,106 +1,78 @@
 //! This module is used to call `bun` binary.
 //! Only CLI arguments definition and its testing should be included in this modules.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 
-use clap::{Arg, ArgAction, Command, builder::OsStringValueParser};
-
-const HELP_DOCUMENT: &str = "Hello, World\n";
+use clap::{Args, Parser, builder::OsStringValueParser};
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Invocation {
-  pub help: bool,
-  pub bunode_options: Vec<OsString>,
+pub struct BunodeCommandOption {
+  pub node_options: NodeOptions,
   pub script: Option<OsString>,
   pub script_arguments: Vec<OsString>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct NodeArgSplit {
-  bunode_options: Vec<OsString>,
-  script: Option<OsString>,
-  script_arguments: Vec<OsString>,
+#[derive(Debug, Parser)]
+#[command(
+  name = "node",
+  disable_help_flag = true,
+  disable_help_subcommand = true,
+  disable_version_flag = true,
+  trailing_var_arg = true
+)]
+struct NodeCommand {
+  #[clap(flatten)]
+  options: NodeOptions,
+
+  #[arg(num_args = 0.., value_parser = OsStringValueParser::new())]
+  script_and_arguments: Vec<OsString>,
 }
 
-pub fn parse<I, T>(args: I) -> Result<Invocation, clap::Error>
+#[derive(Debug, PartialEq, Eq, Args)]
+pub struct NodeOptions {
+  #[clap(short = 'h', long, exclusive = true)]
+  pub help: bool,
+
+  #[arg(short = 'v', long, exclusive = true)]
+  pub version: bool,
+
+  #[arg(long, value_name = "host:port", num_args = 0..=1, require_equals = true, default_missing_value = "", value_parser = OsStringValueParser::new())]
+  pub inspect: Option<OsString>,
+
+  #[arg(long = "test-name-pattern", value_name = "pattern", allow_hyphen_values = true, value_parser = OsStringValueParser::new())]
+  pub test_name_pattern: Option<OsString>,
+}
+
+pub fn parse<I, T>(args: I) -> Result<BunodeCommandOption, clap::Error>
 where
   I: IntoIterator<Item = T>,
   T: Into<OsString> + Clone,
 {
-  let mut args = args.into_iter();
-  let program = args.next().map_or_else(|| OsString::from("node"), Into::into);
-  let split = split_node_args(args.map(Into::into));
+  // 1. Parse Node options and collect the script tail.
+  let command = NodeCommand::try_parse_from(args)?;
+  let NodeCommand { options, script_and_arguments } = command;
 
-  let mut bunode_args = Vec::with_capacity(split.bunode_options.len() + 1);
-  bunode_args.push(program);
-  bunode_args.extend(split.bunode_options);
+  // 2. Split the first trailing operand as the script name.
+  let mut script_and_arguments = script_and_arguments.into_iter();
+  let script = script_and_arguments.next();
+  let script_arguments = script_and_arguments.collect();
 
-  let matches = command().try_get_matches_from(bunode_args)?;
-  let bunode_options = matches
-    .get_many::<OsString>("bunode-options")
-    .map_or_else(Vec::new, |values| values.cloned().collect());
-
-  Ok(Invocation {
-    help: matches.get_flag("help"),
-    bunode_options,
-    script: split.script,
-    script_arguments: split.script_arguments,
-  })
+  Ok(BunodeCommandOption { node_options: options, script, script_arguments })
 }
 
 pub fn print_help() {
-  print!("{HELP_DOCUMENT}");
-}
-
-fn split_node_args(args: impl IntoIterator<Item = OsString>) -> NodeArgSplit {
-  let mut bunode_options = Vec::new();
-  let mut script = None;
-  let mut script_arguments = Vec::new();
-  let mut args = args.into_iter();
-
-  while let Some(arg) = args.next() {
-    if arg == OsStr::new("--") {
-      script = args.next();
-      script_arguments.extend(args);
-      break;
-    }
-
-    if is_bunode_option(&arg) {
-      bunode_options.push(arg);
-      continue;
-    }
-
-    script = Some(arg);
-    script_arguments.extend(args);
-    break;
-  }
-
-  NodeArgSplit { bunode_options, script, script_arguments }
-}
-
-fn is_bunode_option(arg: &OsStr) -> bool {
-  arg != OsStr::new("-") && arg.as_encoded_bytes().starts_with(b"-")
-}
-
-fn command() -> Command {
-  Command::new("node")
-    .disable_help_flag(true)
-    .disable_help_subcommand(true)
-    .arg(Arg::new("help").short('h').long("help").action(ArgAction::SetTrue))
-    .arg(
-      Arg::new("bunode-options")
-        .num_args(0..)
-        .allow_hyphen_values(true)
-        .trailing_var_arg(true)
-        .value_parser(OsStringValueParser::new()),
-    )
+  print!("Hello, World");
 }
 
 #[cfg(test)]
 mod tests {
   use std::ffi::OsString;
 
-  use super::{Invocation, parse};
+  use super::{BunodeCommandOption, NodeOptions, parse};
+
+  fn empty_options() -> NodeOptions {
+    NodeOptions { help: false, version: false, inspect: None, test_name_pattern: None }
+  }
 
   #[test]
   fn parse_should_keep_script_arguments_after_script_operand() -> Result<(), clap::Error> {
@@ -108,11 +80,29 @@ mod tests {
 
     assert_eq!(
       options,
-      Invocation {
-        help: false,
-        bunode_options: vec![OsString::from("--inspect")],
+      BunodeCommandOption {
+        node_options: NodeOptions { inspect: Some(OsString::new()), ..empty_options() },
         script: Some(OsString::from("script.js")),
         script_arguments: vec![OsString::from("--help"), OsString::from("--flag")],
+      },
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_keep_inspect_value_before_script_operand() -> Result<(), clap::Error> {
+    let options = parse(["node", "--inspect=127.0.0.1:9229", "script.js"])?;
+
+    assert_eq!(
+      options,
+      BunodeCommandOption {
+        node_options: NodeOptions {
+          inspect: Some(OsString::from("127.0.0.1:9229")),
+          ..empty_options()
+        },
+        script: Some(OsString::from("script.js")),
+        script_arguments: Vec::new(),
       },
     );
 
@@ -125,9 +115,8 @@ mod tests {
 
     assert_eq!(
       options,
-      Invocation {
-        help: false,
-        bunode_options: Vec::new(),
+      BunodeCommandOption {
+        node_options: empty_options(),
         script: Some(OsString::from("--script.js")),
         script_arguments: vec![OsString::from("--help")],
       },
@@ -137,16 +126,25 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_parse_help_before_script_operand() -> Result<(), clap::Error> {
-    let options = parse(["node", "--help", "script.js"])?;
+  fn parse_should_reject_help_with_script_operand() {
+    let error = parse(["node", "--help", "script.js"]).unwrap_err();
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+  }
+
+  #[test]
+  fn parse_should_keep_option_pattern_before_script_operand() -> Result<(), clap::Error> {
+    let options = parse(["node", "--test-name-pattern", "--unit", "script.js", "--help"])?;
 
     assert_eq!(
       options,
-      Invocation {
-        help: true,
-        bunode_options: Vec::new(),
+      BunodeCommandOption {
+        node_options: NodeOptions {
+          test_name_pattern: Some(OsString::from("--unit")),
+          ..empty_options()
+        },
         script: Some(OsString::from("script.js")),
-        script_arguments: Vec::new(),
+        script_arguments: vec![OsString::from("--help")],
       },
     );
 

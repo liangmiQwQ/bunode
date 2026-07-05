@@ -15,14 +15,14 @@ fn main() -> ExitCode {
   }
 }
 
-fn run(invocation: cli::Invocation) -> ExitCode {
-  let cli::Invocation { help, bunode_options, script, script_arguments } = invocation;
+fn run(invocation: cli::BunodeCommandOption) -> ExitCode {
+  let cli::BunodeCommandOption { node_options, script, script_arguments } = invocation;
 
-  if help {
+  if node_options.help {
     cli::print_help();
     return ExitCode::SUCCESS;
   }
 
-  let _ = (bunode_options, script, script_arguments);
+  let _ = (node_options, script, script_arguments);
   ExitCode::SUCCESS
 }
