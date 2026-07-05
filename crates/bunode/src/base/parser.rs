@@ -12,13 +12,34 @@ enum Source {
   NodeOptions,
 }
 
+#[derive(Default, PartialEq, Eq)]
+enum CommandMode {
+  #[default]
+  Normal,
+  Help,
+  Version,
+}
+
+#[derive(Default, PartialEq, Eq)]
+enum PrintMode {
+  #[default]
+  Disabled,
+  Enabled,
+}
+
+#[derive(Default, PartialEq, Eq)]
+enum OperandBoundary {
+  #[default]
+  ScriptPosition,
+  DoubleDash,
+}
+
 #[derive(Default)]
 struct ParseState {
-  help: bool,
-  version: bool,
+  command_mode: CommandMode,
   inline_command: Option<NodeCommand>,
-  print_mode: bool,
-  ended_by_double_dash: bool,
+  print_mode: PrintMode,
+  operand_boundary: OperandBoundary,
   exec_argv: Vec<OsString>,
   bun_options: Vec<OsString>,
   operands: Vec<OsString>,
@@ -78,7 +99,7 @@ fn parse_tokens(
         return Err(CliError::new("`--` is not allowed in NODE_OPTIONS"));
       }
 
-      state.ended_by_double_dash = true;
+      state.operand_boundary = OperandBoundary::DoubleDash;
       state.operands.extend(tokens[(index + 1)..].iter().cloned());
       break;
     }
@@ -126,13 +147,14 @@ fn parse_long_option(
 
         (None, index + 1)
       }
-      ValueMode::Required => match inline_value {
-        Some(value) => (Some(OsString::from(value)), index + 1),
-        None => {
+      ValueMode::Required => {
+        if let Some(value) = inline_value {
+          (Some(OsString::from(value)), index + 1)
+        } else {
           let value = required_next_token(tokens, index + 1, name)?;
           (Some(value), index + 2)
         }
-      },
+      }
       ValueMode::OptionalEquals => (inline_value.map(OsString::from), index + 1),
     }
   };
@@ -260,14 +282,14 @@ fn apply_option(
   }
 
   match spec.action {
-    OptionAction::Help => state.help = true,
-    OptionAction::Version => state.version = true,
+    OptionAction::Help => state.command_mode = CommandMode::Help,
+    OptionAction::Version => state.command_mode = CommandMode::Version,
     OptionAction::Eval => {
       state.inline_command = Some(NodeCommand::Eval(required_action_value(value, spec)?));
     }
     OptionAction::Print => {
       // Node accepts `--print=<value>` but still reads the expression from argv operands.
-      state.print_mode = true;
+      state.print_mode = PrintMode::Enabled;
     }
     OptionAction::ForwardFlag(name) => state.bun_options.push(OsString::from(name)),
     OptionAction::ForwardValue(name) => {
@@ -356,16 +378,16 @@ impl ParseState {
   }
 
   fn command(&mut self) -> Result<(NodeCommand, usize), CliError> {
-    if self.help {
+    if self.command_mode == CommandMode::Help {
       return Ok((NodeCommand::Help, 0));
     }
 
-    if self.version {
+    if self.command_mode == CommandMode::Version {
       return Ok((NodeCommand::Version, 0));
     }
 
     if let Some(command) = &self.inline_command {
-      let command = if self.print_mode {
+      let command = if self.print_mode == PrintMode::Enabled {
         match command {
           NodeCommand::Eval(code) | NodeCommand::Print(code) => NodeCommand::Print(code.clone()),
           command => command.clone(),
@@ -377,7 +399,9 @@ impl ParseState {
       return Ok((command, 0));
     }
 
-    if self.print_mode && (!self.ended_by_double_dash || self.operands.is_empty()) {
+    if self.print_mode == PrintMode::Enabled
+      && (self.operand_boundary != OperandBoundary::DoubleDash || self.operands.is_empty())
+    {
       let expression =
         self.operands.first().cloned().unwrap_or_else(|| OsString::from("undefined"));
 

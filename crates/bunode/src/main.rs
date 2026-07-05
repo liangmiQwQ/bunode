@@ -5,6 +5,7 @@
 
 use std::{
   env,
+  fmt::Write as _,
   io::{self, IsTerminal},
   process::{ExitCode, ExitStatus},
 };
@@ -111,7 +112,7 @@ fn escape_json_string(value: &str) -> String {
       '\r' => result.push_str("\\r"),
       '\t' => result.push_str("\\t"),
       character if character.is_control() => {
-        result.push_str(&format!("\\u{:04x}", u32::from(character)));
+        let _ = write!(result, "\\u{:04x}", u32::from(character));
       }
       character => result.push(character),
     }
