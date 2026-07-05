@@ -2,9 +2,7 @@ import { base } from '@liangmi/vp-config'
 
 const cargoTask = {
   input: [{ auto: true }, '!target/**', '!.dev/**'],
-  output: [],
-  // Prevent MSVC vctip.exe from keeping Vite Task stdio handles open on Windows.
-  untrackedEnv: ['VSCMD_SKIP_SENDTELEMETRY']
+  output: []
 }
 
 export default base({

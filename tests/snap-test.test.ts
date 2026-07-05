@@ -12,6 +12,8 @@ const snapFileName = 'snap.txt'
 const snapColoredFileName = 'snap-colored.txt'
 const devSetupTimeout = 300_000
 const snapTestTimeout = 120_000
+// Windows CI prebuilds outside Vite Task to avoid MSVC vctip handle leaks.
+const skipCargoDevBuild = process.env.BUNODE_SKIP_DEV_BUILD === '1'
 const ansiPattern = new RegExp(
   `${String.fromCodePoint(27)}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])`,
   'g'
@@ -173,7 +175,10 @@ function readStringArray(
 }
 
 async function setupDevBuild(bunVersion: string) {
-  await runProcess('cargo', ['build', '-p', 'bunode'], projectRoot, process.env)
+  if (!skipCargoDevBuild) {
+    await runProcess('cargo', ['build', '-p', 'bunode'], projectRoot, process.env)
+  }
+
   await runProcess(process.execPath, ['scripts/setup-dev.ts', bunVersion], projectRoot, process.env)
 }
 
