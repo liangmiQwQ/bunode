@@ -4,7 +4,7 @@ use std::{io, process::Command};
 
 use crate::bun;
 
-pub(crate) fn bunode_version() -> io::Result<String> {
+pub fn bunode_version() -> io::Result<String> {
   let node_version = read_bun_output(&["-p", "process.version"])?;
   let bun_version = read_bun_output(&["--version"])?;
 

@@ -4,14 +4,14 @@ use std::{fs, io, path::PathBuf};
 
 use crate::bun;
 
-pub(crate) const EXEC_PATH_ENV: &str = "BUNODE_EXEC_PATH";
-pub(crate) const ARGV0_ENV: &str = "BUNODE_ARGV0";
-pub(crate) const DROP_STDIN_ARGV_ENV: &str = "BUNODE_DROP_STDIN_ARGV";
+pub const EXEC_PATH_ENV: &str = "BUNODE_EXEC_PATH";
+pub const ARGV0_ENV: &str = "BUNODE_ARGV0";
+pub const DROP_STDIN_ARGV_ENV: &str = "BUNODE_DROP_STDIN_ARGV";
 
 const PRELOAD_FILE_NAME: &str = "bunode-preload.js";
 const PRELOAD_SOURCE: &[u8] = include_bytes!("preload.js");
 
-pub(crate) fn prepare() -> io::Result<PathBuf> {
+pub fn prepare() -> io::Result<PathBuf> {
   let bun_path = bun::path()?;
   let bun_directory = bun_path
     .parent()

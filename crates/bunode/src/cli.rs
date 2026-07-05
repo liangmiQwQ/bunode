@@ -9,15 +9,15 @@ use std::{
 };
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct BunodeCommandOption {
-  pub(crate) argv0: OsString,
-  pub(crate) command: NodeCommand,
-  pub(crate) bun_options: Vec<OsString>,
-  pub(crate) script_arguments: Vec<OsString>,
+pub struct BunodeCommandOption {
+  pub argv0: OsString,
+  pub command: NodeCommand,
+  pub bun_options: Vec<OsString>,
+  pub script_arguments: Vec<OsString>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum NodeCommand {
+pub enum NodeCommand {
   Help,
   Version,
   Eval(OsString),
@@ -27,7 +27,7 @@ pub(crate) enum NodeCommand {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct CliError {
+pub struct CliError {
   message: String,
 }
 
@@ -385,16 +385,13 @@ const OPTION_SPECS: &[OptionSpec] = &[
 ];
 
 impl CliError {
-  pub(crate) fn exit(&self) -> ExitCode {
+  pub fn exit(&self) -> ExitCode {
     eprintln!("{}", self.message);
     ExitCode::from(1)
   }
 }
 
-pub(crate) fn parse<I, T>(
-  args: I,
-  node_options: Option<OsString>,
-) -> Result<BunodeCommandOption, CliError>
+pub fn parse<I, T>(args: I, node_options: Option<OsString>) -> Result<BunodeCommandOption, CliError>
 where
   I: IntoIterator<Item = T>,
   T: Into<OsString>,
@@ -406,11 +403,13 @@ where
 
   // 2. NODE_OPTIONS behaves as if it appears before CLI flags.
   if let Some(node_options) = node_options.filter(|value| !value.is_empty()) {
-    parse_tokens(split_node_options(&node_options)?, Source::NodeOptions, &mut state)?;
+    let node_options = split_node_options(&node_options)?;
+    parse_tokens(&node_options, Source::NodeOptions, &mut state)?;
   }
 
   // 3. CLI operands stop option parsing once the script position is reached.
-  parse_tokens(args.collect(), Source::CommandLine, &mut state)?;
+  let args = args.collect::<Vec<_>>();
+  parse_tokens(&args, Source::CommandLine, &mut state)?;
 
   let command = state.command()?;
   let script_arguments = state.script_arguments();
@@ -418,7 +417,7 @@ where
   Ok(BunodeCommandOption { argv0, command, bun_options: state.bun_options, script_arguments })
 }
 
-pub(crate) fn print_help() {
+pub fn print_help() {
   print!(
     "\
 Usage: node [options] [ script.js ] [arguments]
@@ -481,7 +480,7 @@ Environment variables:
 }
 
 fn parse_tokens(
-  tokens: Vec<OsString>,
+  tokens: &[OsString],
   source: Source,
   state: &mut ParseState,
 ) -> Result<(), CliError> {
@@ -502,7 +501,7 @@ fn parse_tokens(
 
     if token_text == "-" || !token_text.starts_with('-') {
       if source == Source::NodeOptions {
-        return Err(CliError::new(format!("`{}` is not allowed in NODE_OPTIONS", token_text)));
+        return Err(CliError::new(format!("`{token_text}` is not allowed in NODE_OPTIONS")));
       }
 
       state.operands.push(token);
@@ -511,9 +510,9 @@ fn parse_tokens(
     }
 
     if token_text.starts_with("--") {
-      index = parse_long_option(&tokens, index, source, state)?;
+      index = parse_long_option(tokens, index, source, state)?;
     } else {
-      index = parse_short_option(&tokens, index, source, state)?;
+      index = parse_short_option(tokens, index, source, state)?;
     }
   }
 
@@ -747,8 +746,7 @@ impl ParseState {
   }
 
   fn script_arguments(&self) -> Vec<OsString> {
-    let skip_script =
-      if self.inline_command.is_some() || self.help || self.version { 0 } else { 1 };
+    let skip_script = usize::from(!(self.inline_command.is_some() || self.help || self.version));
 
     self.operands.iter().skip(skip_script).cloned().collect()
   }

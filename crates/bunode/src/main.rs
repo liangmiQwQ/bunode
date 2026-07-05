@@ -20,12 +20,12 @@ fn main() -> ExitCode {
   let node_options = env::var_os("NODE_OPTIONS");
 
   match cli::parse(env::args_os(), node_options) {
-    Ok(options) => run(options),
+    Ok(options) => run(&options),
     Err(error) => error.exit(),
   }
 }
 
-fn run(invocation: cli::BunodeCommandOption) -> ExitCode {
+fn run(invocation: &cli::BunodeCommandOption) -> ExitCode {
   let result = match &invocation.command {
     cli::NodeCommand::Help => {
       cli::print_help();
@@ -37,27 +37,28 @@ fn run(invocation: cli::BunodeCommandOption) -> ExitCode {
           println!("{version}");
           ExitCode::SUCCESS
         }
-        Err(error) => io_error_exit(error),
+        Err(error) => io_error_exit(&error),
       };
     }
-    cli::NodeCommand::Eval(code) => run_bun(&invocation, BunMode::Eval(code)),
-    cli::NodeCommand::Print(code) => run_bun(&invocation, BunMode::Print(code)),
-    cli::NodeCommand::Script(script) => run_bun(&invocation, BunMode::Script(script)),
+    cli::NodeCommand::Eval(code) => run_bun(invocation, BunMode::Eval(code)),
+    cli::NodeCommand::Print(code) => run_bun(invocation, BunMode::Print(code)),
+    cli::NodeCommand::Script(script) => run_bun(invocation, BunMode::Script(script)),
     cli::NodeCommand::Direct => {
       if io::stdin().is_terminal() {
-        run_bun(&invocation, BunMode::Repl)
+        run_bun(invocation, BunMode::Repl)
       } else {
-        run_bun(&invocation, BunMode::Stdin)
+        run_bun(invocation, BunMode::Stdin)
       }
     }
   };
 
   match result {
     Ok(status) => status_exit_code(status),
-    Err(error) => io_error_exit(error),
+    Err(error) => io_error_exit(&error),
   }
 }
 
+#[derive(Clone, Copy)]
 enum BunMode<'a> {
   Eval(&'a OsStr),
   Print(&'a OsStr),
@@ -159,10 +160,16 @@ fn join_option_value(name: &str, value: &OsStr) -> OsString {
 }
 
 fn status_exit_code(status: ExitStatus) -> ExitCode {
-  ExitCode::from(status.code().unwrap_or(1).try_into().unwrap_or(1))
+  let code = status.code().map_or(1, |code| {
+    let bounded_code = code.clamp(0, i32::from(u8::MAX));
+
+    u8::try_from(bounded_code).map_or(1, |code| code)
+  });
+
+  ExitCode::from(code)
 }
 
-fn io_error_exit(error: io::Error) -> ExitCode {
+fn io_error_exit(error: &io::Error) -> ExitCode {
   eprintln!("bunode: {error}");
   ExitCode::from(1)
 }
