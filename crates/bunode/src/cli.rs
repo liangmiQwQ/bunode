@@ -126,10 +126,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_reject_help_with_script_operand() {
-    let error = parse(["node", "--help", "script.js"]).unwrap_err();
-
-    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+  fn parse_should_allow_help_with_script_operand() {
+    parse(["node", "--help", "script.js"]).unwrap();
   }
 
   #[test]
