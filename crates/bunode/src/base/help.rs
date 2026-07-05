@@ -19,7 +19,7 @@ pub fn print() {
   print_option_section(HelpSection::Bun);
   println!();
   println!("Environment variables:");
-  print_row("NODE_OPTIONS", "supported Node options are translated before CLI options");
+  print_row("NODE_OPTIONS", "environment-allowed Node options are translated before CLI options");
 }
 
 fn print_option_section(section: HelpSection) {

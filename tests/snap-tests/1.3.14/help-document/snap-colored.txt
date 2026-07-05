@@ -51,4 +51,4 @@ Bun-specific options:
   --bun-watch                     restart on file changes
 
 Environment variables:
-  NODE_OPTIONS                    supported Node options are translated before CLI options
+  NODE_OPTIONS                    environment-allowed Node options are translated before CLI options
