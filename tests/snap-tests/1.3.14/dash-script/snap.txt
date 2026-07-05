@@ -1,0 +1,1 @@
+bunode: script `--script.js` starts with `-`; pass it with an explicit relative path like `./--script.js`.

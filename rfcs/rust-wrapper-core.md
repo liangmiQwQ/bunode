@@ -46,7 +46,7 @@ For CI and non-TTY environment, Node.js executes stdin instead of starting the R
 
 We wrap `bun run --no-install --no-env-file` for the script running.
 
-Considering `bun run` can also trigger tasks in `package.json`, we prepend a `./` (`.\` on Windows) for pure script name (without any `/`, `\` in windows).
+Considering `bun run` can also trigger tasks in `package.json`, we prepend a `./` (`.\` on Windows) for pure script name (without any `/`, `\` in windows). Script names starting with `-` keep Node.js's explicit path requirement, so users should pass `./--name.js` instead of `-- --name.js`.
 
 For node options, we will try to translate them to buns or wrap as much as possible, as well as Node's environment variables. For `NODE_OPTIONS`, we follow the same translating method and handle priority the same as Node does.
 

@@ -43,7 +43,13 @@ fn run(invocation: &cli::BunodeCommandOption) -> ExitCode {
     }
     cli::NodeCommand::Eval(code) => run_bun(invocation, BunMode::Eval(code)),
     cli::NodeCommand::Print(code) => run_bun(invocation, BunMode::Print(code)),
-    cli::NodeCommand::Script(script) => run_bun(invocation, BunMode::Script(script)),
+    cli::NodeCommand::Script(script) => {
+      if script_requires_explicit_relative_path(script) {
+        return dash_script_error(script);
+      }
+
+      run_bun(invocation, BunMode::Script(script))
+    }
     cli::NodeCommand::Direct => {
       if io::stdin().is_terminal() {
         run_bun(invocation, BunMode::Repl)
@@ -151,6 +157,25 @@ fn normalize_script_name(script: &OsStr) -> OsString {
   let mut normalized = OsString::from(if cfg!(windows) { r".\" } else { "./" });
   normalized.push(script);
   normalized
+}
+
+fn script_requires_explicit_relative_path(script: &OsStr) -> bool {
+  if script == OsStr::new("-") {
+    return false;
+  }
+
+  let script = script.to_string_lossy();
+
+  script.starts_with('-') && !script.contains('/') && !script.contains('\\')
+}
+
+fn dash_script_error(script: &OsStr) -> ExitCode {
+  eprintln!(
+    "bunode: script `{}` starts with `-`; pass it with an explicit relative path like `./{}`.",
+    script.to_string_lossy(),
+    script.to_string_lossy(),
+  );
+  ExitCode::from(1)
 }
 
 fn join_option_value(name: &str, value: &OsStr) -> OsString {
