@@ -1,14 +1,13 @@
 use std::{
   env,
   ffi::{OsStr, OsString},
-  io,
-  path::{Path, PathBuf},
-  process::{Command as ProcessCommand, ExitCode, ExitStatus},
+  process::ExitCode,
 };
 
 use clap::{Arg, ArgAction, Command as ClapCommand, builder::OsStringValueParser};
 
-const HELP_DOCUMENT: &str = "Hello, World\n";
+mod bun_runner;
+mod help;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Cli {
@@ -36,7 +35,7 @@ fn run(cli: Cli) -> ExitCode {
   let Cli { help, bunode_options: _, script, script_arguments } = cli;
 
   if help {
-    print!("{HELP_DOCUMENT}");
+    help::print_document();
     return ExitCode::SUCCESS;
   }
 
@@ -44,9 +43,7 @@ fn run(cli: Cli) -> ExitCode {
     return ExitCode::SUCCESS;
   };
 
-  let bun_args = build_bun_script_args(script, script_arguments);
-
-  match run_bun(&bun_args) {
+  match bun_runner::run_script(script, script_arguments) {
     Ok(code) => code,
     Err(error) => {
       eprintln!("bunode: failed to run Bun: {error}");
@@ -111,51 +108,6 @@ fn is_bunode_option(arg: &OsStr) -> bool {
   arg != OsStr::new("-") && arg.as_encoded_bytes().starts_with(b"-")
 }
 
-fn build_bun_script_args(script: OsString, script_arguments: Vec<OsString>) -> Vec<OsString> {
-  let mut args = Vec::with_capacity(script_arguments.len() + 4);
-  args.push(OsString::from("run"));
-  args.push(OsString::from("--no-install"));
-  args.push(OsString::from("--no-env-file"));
-  args.push(normalize_script_path(script));
-  args.extend(script_arguments);
-  args
-}
-
-fn normalize_script_path(script: OsString) -> OsString {
-  if script == OsStr::new("-") || Path::new(&script).components().count() != 1 {
-    return script;
-  }
-
-  PathBuf::from(".").join(script).into_os_string()
-}
-
-fn run_bun(args: &[OsString]) -> io::Result<ExitCode> {
-  let status = ProcessCommand::new(resolve_bun_path()?).args(args).status()?;
-
-  Ok(exit_code_from_status(status))
-}
-
-fn resolve_bun_path() -> io::Result<PathBuf> {
-  let executable = env::current_exe()?;
-  let executable_dir = executable.parent().ok_or_else(|| {
-    io::Error::new(io::ErrorKind::NotFound, "failed to resolve Bunode executable directory")
-  })?;
-
-  #[cfg(windows)]
-  {
-    Ok(executable_dir.join("bun").join("bun.exe"))
-  }
-
-  #[cfg(not(windows))]
-  {
-    Ok(executable_dir.join("..").join("bun").join("bun"))
-  }
-}
-
-fn exit_code_from_status(status: ExitStatus) -> ExitCode {
-  status.code().and_then(|code| u8::try_from(code).ok()).map_or(ExitCode::FAILURE, ExitCode::from)
-}
-
 fn clap_command() -> ClapCommand {
   ClapCommand::new("node")
     .disable_help_flag(true)
@@ -174,7 +126,7 @@ fn clap_command() -> ClapCommand {
 mod tests {
   use std::ffi::OsString;
 
-  use super::{Cli, build_bun_script_args, parse_cli};
+  use super::{Cli, parse_cli};
 
   #[test]
   fn parse_cli_should_keep_script_arguments_after_script_operand() -> Result<(), clap::Error> {
@@ -225,25 +177,5 @@ mod tests {
     );
 
     Ok(())
-  }
-
-  #[test]
-  fn build_bun_script_args_should_passthrough_script_arguments() {
-    let args = build_bun_script_args(
-      OsString::from("script.js"),
-      vec![OsString::from("--help"), OsString::from("--flag")],
-    );
-
-    assert_eq!(
-      args,
-      vec![
-        OsString::from("run"),
-        OsString::from("--no-install"),
-        OsString::from("--no-env-file"),
-        OsString::from("./script.js"),
-        OsString::from("--help"),
-        OsString::from("--flag"),
-      ],
-    );
   }
 }
