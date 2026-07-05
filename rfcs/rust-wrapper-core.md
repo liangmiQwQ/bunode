@@ -22,11 +22,13 @@ It's mainly designed for future tarball releasing.
 
 To keep Bun's semver semantic, we use a hacky but effective way: add 100 to the Bun's own compatible-layer version.
 
-For example: `bun v1.4.0` -> ` bun -e "console.log(process.version)" v26.3.0` `node v26.3.100` (Bunode)
+For example: `bun v1.4.0` -> `bun -e "console.log(process.version)" v26.3.0` `node v26.3.100` (Bunode)
 
-So if developers define `package.json#node#engine` like `>=22.18.0` or `^22.18.0`, it will keep Bunode usable.
+So if developers define `package.json#node#engine` like `>=22.18.0` or `^26.3.0`, it will keep Bunode usable.
 
 The version is injected in `node --version`, registry and other places needs version.
+
+We don't and we aren't able to modify `node -e "console.log(process.version)"`'s version result, we will keep it as is for internal checking to avoid confusion.
 
 ### `node` direct calls
 
@@ -34,15 +36,21 @@ We wrap `bun repl`. Replacing the first line's `Bun` and its version to `Node.js
 
 We can't make the behavior 100% compatible but it is basically similar. Considering this feature is mainly for human to call, so I think it's not a big deal.
 
+For CI and non-TTY environment, Node.js executes stdin instead of starting the REPL. We follow its behavior as well by using `bun run -`
+
 ### `node [options] [ script.js ] [arguments]`
 
-We wrap `bun run` for the script running.
+We wrap `bun run --no-install` for the script running.
 
-Considering `bun run` can also trigger tasks in `package.json`, we prepend a `./` for pure script name (without any `/`).
+Considering `bun run` can also trigger tasks in `package.json`, we prepend a `./` (`.\` on Windows) for pure script name (without any `/`, `\` in windows).
 
 For node options, we will try to translate them to buns or wrap as much as possible.
 
-### Node options and
+### Help document
+
+In `node --help`, we only print supported options. And avoid printing unsupported options, environment variables and subcommands.
+
+We can warn / error to these flags if users call them. But they should not be put in the help document to confuse users.
 
 ## Non Goal
 
