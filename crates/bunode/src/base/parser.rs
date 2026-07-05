@@ -122,6 +122,7 @@ fn parse_tokens(
 
       if state.should_capture_print_expression(source) {
         state.inline_command = Some(NodeCommand::Print(token.clone()));
+        state.print_operand_mode = PrintOperandMode::Script;
         state.exec_argv.push(token);
         index += 1;
         continue;
@@ -308,10 +309,7 @@ fn apply_option(
     return Err(CliError::new(format!("`{name}` is not allowed in NODE_OPTIONS")));
   }
 
-  if state.print_mode == PrintMode::Enabled
-    && state.inline_command.is_none()
-    && !matches!(spec.action, OptionAction::Print)
-  {
+  if state.print_mode == PrintMode::Enabled && !matches!(spec.action, OptionAction::Print) {
     state.print_operand_mode = PrintOperandMode::Script;
   }
 
@@ -328,6 +326,7 @@ fn apply_option(
     OptionAction::Print => {
       // Node accepts `--print=<value>` but still reads the expression from argv operands.
       state.print_mode = PrintMode::Enabled;
+      state.print_operand_mode = PrintOperandMode::Expression;
     }
     OptionAction::Preload(kind) => {
       let value = join_option_value("--preload", required_action_value(value, spec)?);
@@ -438,7 +437,6 @@ impl ParseState {
     source == Source::CommandLine
       && self.print_mode == PrintMode::Enabled
       && self.print_operand_mode == PrintOperandMode::Expression
-      && self.inline_command.is_none()
   }
 
   fn finish(mut self) -> Result<ParsedState, CliError> {
@@ -618,6 +616,20 @@ mod tests {
         script_arguments: vec![OsString::from("first")],
       },
     );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_let_later_print_operand_replace_earlier_inline_command()
+  -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "-e", "\"eval\"", "-p", "\"print\""])?;
+
+    assert_eq!(options.command, NodeCommand::Print(OsString::from("\"print\"")));
+
+    let options = parse_cli(&["node", "-p", "\"a\"", "-p", "\"b\""])?;
+
+    assert_eq!(options.command, NodeCommand::Print(OsString::from("\"b\"")));
 
     Ok(())
   }

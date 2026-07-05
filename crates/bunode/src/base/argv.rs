@@ -40,14 +40,14 @@ pub fn build_bun_args(
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(OsString::from("-e"));
-      args.push((*code).to_os_string());
+      args.push(normalize_eval_code(code));
       push_user_arguments(&mut args, invocation, true);
     }
     BunMode::Print(code) => {
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(OsString::from("-p"));
-      args.push((*code).to_os_string());
+      args.push(normalize_print_code(code));
       push_user_arguments(&mut args, invocation, true);
     }
     BunMode::Script(script) => {
@@ -84,6 +84,22 @@ fn push_runtime_flags(args: &mut Vec<OsString>, preload_path: &Path) {
   args.push(OsString::from("--no-install"));
   args.push(OsString::from("--no-env-file"));
   args.push(join_option_value("--preload", preload_path.as_os_str()));
+}
+
+fn normalize_eval_code(code: &OsStr) -> OsString {
+  if code.is_empty() {
+    return OsString::from("void 0");
+  }
+
+  code.to_os_string()
+}
+
+fn normalize_print_code(code: &OsStr) -> OsString {
+  if code.is_empty() {
+    return OsString::from("undefined");
+  }
+
+  code.to_os_string()
 }
 
 fn push_user_arguments(
@@ -207,6 +223,27 @@ mod tests {
         OsString::from("--flag"),
       ],
     );
+  }
+
+  #[test]
+  fn eval_and_print_modes_should_normalize_empty_code() {
+    let eval_invocation = invocation(NodeCommand::Eval(OsString::new()));
+    let print_invocation = invocation(NodeCommand::Print(OsString::new()));
+    let empty = OsString::new();
+
+    let eval_args = build_bun_args(
+      &eval_invocation,
+      &BunMode::Eval(empty.as_os_str()),
+      Path::new("/tmp/preload.js"),
+    );
+    let print_args = build_bun_args(
+      &print_invocation,
+      &BunMode::Print(empty.as_os_str()),
+      Path::new("/tmp/preload.js"),
+    );
+
+    assert_eq!(eval_args[5], OsString::from("void 0"));
+    assert_eq!(print_args[5], OsString::from("undefined"));
   }
 
   #[test]

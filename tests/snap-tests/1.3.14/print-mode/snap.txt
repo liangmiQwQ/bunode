@@ -4,5 +4,8 @@ undefined
 expr
 ["a","--","b"]
 {"execArgv":["-p","JSON.stringify({ execArgv: process.execArgv, argv: process.argv.slice(1) })","--conditions","custom"],"argv":["arg"]}
+undefined
+print
+b
 scriptExecArgv=["-p"]
 scriptArgv=script.js|--flag
