@@ -1,0 +1,4 @@
+argv0=node
+argv=script.js|--flag|value
+execPath=true
+internalEnv=true

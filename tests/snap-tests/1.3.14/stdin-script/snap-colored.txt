@@ -1,0 +1,3 @@
+argvLength=1
+hasDashArgv=false
+execPath=true

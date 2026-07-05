@@ -419,7 +419,7 @@ where
 }
 
 pub(crate) fn print_help() {
-  println!(
+  print!(
     "\
 Usage: node [options] [ script.js ] [arguments]
 
