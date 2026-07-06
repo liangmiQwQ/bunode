@@ -15,7 +15,7 @@ use super::{
   },
 };
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExecutionPlan {
   pub argv0: OsString,
   pub command: NodeCommand,

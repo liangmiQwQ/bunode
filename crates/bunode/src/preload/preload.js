@@ -19,7 +19,12 @@ if (execPath) {
 }
 
 if (argv0) {
-  Object.defineProperty(process, 'argv0', { value: argv0, configurable: true })
+  Object.defineProperty(process, 'argv0', {
+    value: argv0,
+    writable: false,
+    enumerable: true,
+    configurable: false
+  })
 }
 
 if (execArgv) {

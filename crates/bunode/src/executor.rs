@@ -2,7 +2,7 @@
 
 use std::{
   env,
-  ffi::OsStr,
+  ffi::{OsStr, OsString},
   fmt::Write as _,
   fs::OpenOptions,
   io::{self, IsTerminal, Read, Write},
@@ -68,6 +68,9 @@ impl Executor {
       NodeCommand::Eval(code) => Self::run_bun(invocation, BunMode::Eval(code)),
       NodeCommand::Print(code) => Self::run_bun(invocation, BunMode::Print(code)),
       NodeCommand::PrintStdin => Self::run_print_stdin(invocation),
+      NodeCommand::Script(script) if script == OsStr::new("-") => {
+        Self::run_script_stdin(invocation)
+      }
       NodeCommand::Script(script) => {
         base::argv::validate_script(script)?;
         Self::run_bun(invocation, BunMode::Script(script))
@@ -86,12 +89,29 @@ impl Executor {
     let mut code = String::new();
     io::stdin().read_to_string(&mut code)?;
 
-    // Bun reports an empty `run -` as a missing module, while Node treats it as a no-op.
     if code.is_empty() {
-      return Ok(ExecutionResult::ExitCode(ExitCode::SUCCESS));
+      return Self::run_empty_stdin(invocation);
     }
 
     Self::run_bun_with_stdin(invocation, BunMode::Stdin, code.as_bytes())
+  }
+
+  fn run_script_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
+    let mut code = String::new();
+    io::stdin().read_to_string(&mut code)?;
+
+    if code.is_empty() {
+      let invocation = invocation_with_script_argument(invocation, OsString::from("-"));
+
+      return Self::run_empty_stdin(&invocation);
+    }
+
+    Self::run_bun_with_stdin(invocation, BunMode::Script(OsStr::new("-")), code.as_bytes())
+  }
+
+  fn run_empty_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
+    // Bun reports an empty `run -` as a missing module, while Node still runs setup hooks.
+    Self::run_bun(invocation, BunMode::Eval(OsStr::new("")))
   }
 
   fn run_print_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
@@ -170,6 +190,16 @@ impl Executor {
 
 fn write_print_stdin_source(code: &str) -> Result<PathBuf, BunodeError> {
   write_private_temp_file("bunode-print-stdin", ".js", code.as_bytes())
+}
+
+fn invocation_with_script_argument(
+  invocation: &ExecutionPlan,
+  argument: OsString,
+) -> ExecutionPlan {
+  let mut invocation = invocation.clone();
+
+  invocation.script_arguments.insert(0, argument);
+  invocation
 }
 
 fn build_print_stdin_expression(path: &Path) -> std::ffi::OsString {

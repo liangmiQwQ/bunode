@@ -8,9 +8,14 @@ use std::{
 use crate::error::CliError;
 
 pub(super) fn materialize_javascript_module(specifier: &str) -> Result<Option<PathBuf>, CliError> {
-  let Some(rest) = specifier.strip_prefix("data:") else {
+  let Some((scheme, rest)) = specifier.split_once(':') else {
     return Ok(None);
   };
+
+  if !scheme.eq_ignore_ascii_case("data") {
+    return Ok(None);
+  }
+
   let Some((metadata, payload)) = rest.split_once(',') else {
     return Err(CliError::new("invalid data URL passed to --import"));
   };
@@ -187,6 +192,16 @@ mod tests {
   -> Result<(), crate::error::CliError> {
     let path =
       materialize_javascript_module("data:Text/JavaScript,globalThis.loaded%3D1")?.unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
+
+    Ok(())
+  }
+
+  #[test]
+  fn should_materialize_case_insensitive_data_scheme() -> Result<(), crate::error::CliError> {
+    let path =
+      materialize_javascript_module("DATA:text/javascript,globalThis.loaded%3D1")?.unwrap();
 
     assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
 

@@ -21,12 +21,23 @@ function canWriteExecPath() {
   }
 }
 
+function descriptorText(value) {
+  const descriptor = Object.getOwnPropertyDescriptor(process, value)
+
+  return [
+    descriptor.writable === true ? 'w' : 'r',
+    descriptor.enumerable === true ? 'e' : 'h',
+    descriptor.configurable === true ? 'c' : 'f'
+  ].join('')
+}
+
 process.stdout.write(
   [
     `argv0=${executableName(process.argv0)}`,
     `argv=${process.argv.slice(1).map(executableName).join('|')}`,
     `execPath=${isBunodeExecPath(process.execPath)}`,
     `execPathWritable=${canWriteExecPath()}`,
+    `argv0Descriptor=${descriptorText('argv0')}`,
     `internalEnv=${process.env.BUNODE_EXEC_PATH === undefined}`
   ].join('\n')
 )
