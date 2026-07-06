@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::cli::{BunodeCommandOption, CliError, NodeCommand};
 
 use super::{
-  builtins, env_file,
+  builtins, data_url, env_file,
   options::{
     HelpSection, OptionAction, OptionSpec, PreloadKind, ValueMode, find_long_option,
     find_short_option,
@@ -57,6 +57,7 @@ struct ParseState {
   operand_boundary: OperandBoundary,
   exec_argv: Vec<OsString>,
   bun_options: Vec<OsString>,
+  bun_preloads: Vec<OsString>,
   common_js_preloads: Vec<OsString>,
   es_module_preloads: Vec<OsString>,
   env_file_node_options: Option<OsString>,
@@ -362,6 +363,14 @@ fn apply_option(
         return Ok(());
       }
 
+      if matches!(kind, PreloadKind::EsModule)
+        && let Some(path) = data_url::materialize_javascript_module(&value.to_string_lossy())?
+      {
+        let value = join_option_value("--preload", path.into_os_string());
+        state.es_module_preloads.push(value);
+        return Ok(());
+      }
+
       let value = join_option_value("--preload", value);
 
       match kind {
@@ -381,6 +390,11 @@ fn apply_option(
         {
           state.env_file_node_options = Some(node_options);
         }
+      }
+
+      if name == "--preload" {
+        state.bun_preloads.push(join_option_value(name, value));
+        return Ok(());
       }
 
       state.bun_options.push(join_option_value(name, value));
@@ -485,6 +499,7 @@ impl ParseState {
     let mut bun_options = self.bun_options;
     bun_options.extend(self.common_js_preloads);
     bun_options.extend(self.es_module_preloads);
+    bun_options.extend(self.bun_preloads);
 
     Ok(ParsedState {
       command,
@@ -880,6 +895,37 @@ mod tests {
       options.bun_options,
       vec![OsString::from("--preload=./cjs.cjs"), OsString::from("--preload=./esm.mjs")],
     );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_run_node_options_preloads_before_bun_preloads() -> Result<(), crate::cli::CliError>
+  {
+    let options = parse_with_node_options(
+      &["node", "--bun-preload", "./cli.js", "-e", "0"],
+      "--require ./env.cjs",
+    )?;
+
+    assert_eq!(
+      options.bun_options,
+      vec![OsString::from("--preload=./env.cjs"), OsString::from("--preload=./cli.js")],
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_materialize_data_url_imports() -> Result<(), crate::cli::CliError> {
+    let options =
+      parse_cli(&["node", "--import", "data:text/javascript,globalThis.loaded%3D1", "-e", "0"])?;
+    let Some(preload) = options.bun_options.first() else {
+      panic!("data import should produce a Bun preload");
+    };
+    let preload = preload.to_string_lossy();
+    let path = preload.strip_prefix("--preload=").expect("data import should become preload");
+
+    assert_eq!(std::fs::read(path).unwrap(), b"globalThis.loaded=1");
 
     Ok(())
   }

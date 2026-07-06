@@ -1,6 +1,7 @@
 {
   "commands": [
     "node --import ./esm.mjs --require ./cjs.cjs -e \"0\"",
-    "node --import node:fs --require fs -e \"console.log('builtin')\""
+    "node --import node:fs --require fs -e \"console.log('builtin')\"",
+    "node --import \"data:text/javascript,globalThis.dataLoaded=1\" -e \"console.log(globalThis.dataLoaded)\""
   ]
 }

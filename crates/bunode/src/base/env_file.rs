@@ -85,14 +85,12 @@ fn parse_quoted_value(value: &str, quote: char) -> String {
 
 fn parse_unquoted_value(value: &str) -> String {
   let mut result = String::new();
-  let mut previous_was_whitespace = false;
 
   for character in value.chars() {
-    if character == '#' && previous_was_whitespace {
+    if character == '#' {
       break;
     }
 
-    previous_was_whitespace = character.is_whitespace();
     result.push(character);
   }
 
@@ -115,6 +113,10 @@ mod tests {
     );
     assert_eq!(
       parse_assignment("NODE_OPTIONS=--conditions=from-env # comment"),
+      Some(("NODE_OPTIONS", "--conditions=from-env".to_string())),
+    );
+    assert_eq!(
+      parse_assignment("NODE_OPTIONS=--conditions=from-env#comment"),
       Some(("NODE_OPTIONS", "--conditions=from-env".to_string())),
     );
   }
