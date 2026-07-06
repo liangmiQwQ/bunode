@@ -946,6 +946,13 @@ mod tests {
   }
 
   #[test]
+  fn parse_should_reject_short_equals_values() {
+    let error = parse_cli(&["node", "-p=e"]).unwrap_err();
+
+    assert_eq!(error.to_string(), "bunode: unsupported Node.js option `-p=e`");
+  }
+
+  #[test]
   fn parse_should_reject_missing_option_value_before_next_flag() {
     let error = parse_cli(&["node", "--require", "--eval", "0"]).unwrap_err();
 

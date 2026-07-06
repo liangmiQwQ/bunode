@@ -1,0 +1,8 @@
+eval=9
+bunode: `--eval` is not allowed in NODE_OPTIONS
+env-file=9
+bunode: `--env-file` is not allowed in NODE_OPTIONS
+double-dash=9
+bunode: `--` is not allowed in NODE_OPTIONS
+operand=9
+bunode: `script.js` is not allowed in NODE_OPTIONS
