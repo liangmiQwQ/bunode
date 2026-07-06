@@ -4,10 +4,10 @@ use std::{
   env,
   ffi::OsStr,
   fmt::Write as _,
-  fs,
-  io::{self, IsTerminal, Read},
+  fs::OpenOptions,
+  io::{self, IsTerminal, Read, Write},
   path::{Path, PathBuf},
-  process::{ExitCode, ExitStatus},
+  process::{self, Command, ExitCode, ExitStatus, Stdio},
   time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -76,10 +76,22 @@ impl Executor {
         if io::stdin().is_terminal() {
           Self::run_bun(invocation, BunMode::Repl)
         } else {
-          Self::run_bun(invocation, BunMode::Stdin)
+          Self::run_stdin(invocation)
         }
       }
     }
+  }
+
+  fn run_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
+    let mut code = String::new();
+    io::stdin().read_to_string(&mut code)?;
+
+    // Bun reports an empty `run -` as a missing module, while Node treats it as a no-op.
+    if code.is_empty() {
+      return Ok(ExecutionResult::ExitCode(ExitCode::SUCCESS));
+    }
+
+    Self::run_bun_with_stdin(invocation, BunMode::Stdin, code.as_bytes())
   }
 
   fn run_print_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
@@ -104,6 +116,33 @@ impl Executor {
     invocation: &ExecutionPlan,
     mode: BunMode<'_>,
   ) -> Result<ExecutionResult, BunodeError> {
+    let command = Self::configure_bun(invocation, mode)?;
+
+    Ok(ExecutionResult::Status(run_configured_bun(command)?))
+  }
+
+  fn run_bun_with_stdin(
+    invocation: &ExecutionPlan,
+    mode: BunMode<'_>,
+    stdin: &[u8],
+  ) -> Result<ExecutionResult, BunodeError> {
+    let mut command = Self::configure_bun(invocation, mode)?;
+    command.stdin(Stdio::piped());
+
+    // Direct stdin has already been read so the child gets the original program through a pipe.
+    let mut child = command.spawn()?;
+    let mut child_stdin = child
+      .stdin
+      .take()
+      .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Bun stdin was not piped"))?;
+
+    child_stdin.write_all(stdin)?;
+    drop(child_stdin);
+
+    Ok(ExecutionResult::Status(child.wait()?))
+  }
+
+  fn configure_bun(invocation: &ExecutionPlan, mode: BunMode<'_>) -> Result<Command, BunodeError> {
     let mut command = bun::command()?;
     let args = if matches!(mode, BunMode::Repl) {
       base::argv::build_repl_args(invocation)
@@ -125,18 +164,12 @@ impl Executor {
 
     command.args(args);
 
-    Ok(ExecutionResult::Status(run_configured_bun(command)?))
+    Ok(command)
   }
 }
 
 fn write_print_stdin_source(code: &str) -> Result<PathBuf, BunodeError> {
-  let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
-  let mut path = env::temp_dir();
-
-  path.push(format!("bunode-print-stdin-{}-{timestamp}.js", std::process::id()));
-  fs::write(&path, code)?;
-
-  Ok(path)
+  write_private_temp_file("bunode-print-stdin", ".js", code.as_bytes())
 }
 
 fn build_print_stdin_expression(path: &Path) -> std::ffi::OsString {
@@ -146,6 +179,44 @@ fn build_print_stdin_expression(path: &Path) -> std::ffi::OsString {
   std::ffi::OsString::from(format!(
     "try{{eval(require(\"node:fs\").readFileSync(\"{path}\",\"utf8\"))}}finally{{require(\"node:fs\").rmSync(\"{path}\",{{force:true}})}}",
   ))
+}
+
+fn write_private_temp_file(
+  prefix: &str,
+  suffix: &str,
+  content: &[u8],
+) -> Result<PathBuf, BunodeError> {
+  let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+
+  for attempt in 0..32 {
+    let mut path = env::temp_dir();
+    path.push(format!("{prefix}-{}-{timestamp}-{attempt}{suffix}", process::id()));
+
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+      use std::os::unix::fs::OpenOptionsExt;
+
+      options.mode(0o600);
+    }
+
+    match options.open(&path) {
+      Ok(mut file) => {
+        // Stdin source can contain user code, so keep the temporary copy private.
+        file.write_all(content)?;
+        return Ok(path);
+      }
+      Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+      Err(error) => return Err(error.into()),
+    }
+  }
+
+  Err(
+    io::Error::new(io::ErrorKind::AlreadyExists, "failed to create a private Bunode temp file")
+      .into(),
+  )
 }
 
 #[cfg(unix)]
