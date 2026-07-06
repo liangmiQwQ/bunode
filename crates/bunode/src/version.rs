@@ -9,7 +9,7 @@ use crate::{bun, error::BunodeError};
 #[derive(Clone, Debug)]
 pub struct RuntimeVersions {
   pub bun: Version,
-  masqueraded: Version,
+  pub masqueraded: Version,
 }
 
 pub fn current() -> Result<RuntimeVersions, BunodeError> {
@@ -22,7 +22,8 @@ impl RuntimeVersions {
   }
 }
 
-pub fn bunode_version(bun_version: &Version, masqueraded_version: &Version) -> Version {
+/// Calc bunode version according to bun version and masqueraded Node.js version
+fn bunode_version(bun_version: &Version, masqueraded_version: &Version) -> Version {
   let mut version =
     Version::new(masqueraded_version.major, masqueraded_version.minor, masqueraded_version.patch);
 
@@ -37,7 +38,7 @@ pub fn bunode_version(bun_version: &Version, masqueraded_version: &Version) -> V
 }
 
 /// For performance, we should only call this once, and cache its result
-pub fn bun_version() -> Result<Version, BunodeError> {
+fn bun_version() -> Result<Version, BunodeError> {
   let bun_version = read_bun_version_from_output(&["--version"])?;
 
   parse_version_output(&bun_version)
@@ -46,7 +47,7 @@ pub fn bun_version() -> Result<Version, BunodeError> {
 }
 
 /// For performance, we should only call this once, and cache its result
-pub fn masqueraded_version() -> Result<Version, BunodeError> {
+fn masqueraded_version() -> Result<Version, BunodeError> {
   let bun_version = read_bun_version_from_output(&["-p", "process.version"])?;
 
   parse_version_output(&bun_version)
