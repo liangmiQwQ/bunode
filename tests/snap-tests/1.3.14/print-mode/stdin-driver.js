@@ -39,6 +39,19 @@ if (requireResult.status !== 0) {
   throw new Error(`print require stdin child exited with code ${requireResult.status ?? 1}`)
 }
 
+const metadataResult = spawnSync(process.execPath, ['-p'], {
+  input: 'JSON.stringify({ file: __filename, dir: __dirname })\n',
+  encoding: 'utf8',
+  env: process.env
+})
+
+process.stdout.write(metadataResult.stdout)
+process.stderr.write(metadataResult.stderr)
+
+if (metadataResult.status !== 0) {
+  throw new Error(`print metadata stdin child exited with code ${metadataResult.status ?? 1}`)
+}
+
 const largeProgram = `0;/*${'x'.repeat(500_000)}*/ 42\n`
 const largeResult = spawnSync(process.execPath, ['-p', '-'], {
   input: largeProgram,

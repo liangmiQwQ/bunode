@@ -86,19 +86,19 @@ impl Executor {
   }
 
   fn run_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
-    let mut code = String::new();
-    io::stdin().read_to_string(&mut code)?;
+    let mut code = Vec::new();
+    io::stdin().read_to_end(&mut code)?;
 
     if code.is_empty() {
       return Self::run_empty_stdin(invocation);
     }
 
-    Self::run_bun_with_stdin(invocation, BunMode::Stdin, code.as_bytes())
+    Self::run_bun_with_stdin(invocation, BunMode::Stdin, &code)
   }
 
   fn run_script_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
-    let mut code = String::new();
-    io::stdin().read_to_string(&mut code)?;
+    let mut code = Vec::new();
+    io::stdin().read_to_end(&mut code)?;
 
     if code.is_empty() {
       let invocation = invocation_with_script_argument(invocation, OsString::from("-"));
@@ -106,7 +106,7 @@ impl Executor {
       return Self::run_empty_stdin(&invocation);
     }
 
-    Self::run_bun_with_stdin(invocation, BunMode::Script(OsStr::new("-")), code.as_bytes())
+    Self::run_bun_with_stdin(invocation, BunMode::Script(OsStr::new("-")), &code)
   }
 
   fn run_empty_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
@@ -119,8 +119,8 @@ impl Executor {
       return Self::run_bun(invocation, BunMode::Repl);
     }
 
-    let mut code = String::new();
-    io::stdin().read_to_string(&mut code)?;
+    let mut code = Vec::new();
+    io::stdin().read_to_end(&mut code)?;
 
     if code.is_empty() {
       return Self::run_bun(invocation, BunMode::Print(OsStr::new("undefined")));
@@ -156,10 +156,17 @@ impl Executor {
       .take()
       .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Bun stdin was not piped"))?;
 
-    child_stdin.write_all(stdin)?;
+    let write_result = child_stdin.write_all(stdin);
     drop(child_stdin);
+    let status = child.wait()?;
 
-    Ok(ExecutionResult::Status(child.wait()?))
+    if let Err(error) = write_result
+      && error.kind() != io::ErrorKind::BrokenPipe
+    {
+      return Err(error.into());
+    }
+
+    Ok(ExecutionResult::Status(status))
   }
 
   fn configure_bun(invocation: &ExecutionPlan, mode: BunMode<'_>) -> Result<Command, BunodeError> {
@@ -188,8 +195,8 @@ impl Executor {
   }
 }
 
-fn write_print_stdin_source(code: &str) -> Result<PathBuf, BunodeError> {
-  write_private_temp_file("bunode-print-stdin", ".js", code.as_bytes())
+fn write_print_stdin_source(code: &[u8]) -> Result<PathBuf, BunodeError> {
+  write_private_temp_file("bunode-print-stdin", ".js", code)
 }
 
 fn invocation_with_script_argument(
@@ -207,7 +214,7 @@ fn build_print_stdin_expression(path: &Path) -> std::ffi::OsString {
 
   // Bun's `-p` requires argv code, so stdin source moves through a temp file to avoid argv limits.
   std::ffi::OsString::from(format!(
-    "try{{eval(require(\"node:fs\").readFileSync(\"{path}\",\"utf8\"))}}finally{{require(\"node:fs\").rmSync(\"{path}\",{{force:true}})}}",
+    "try{{const __filename=\"[stdin]\",__dirname=\".\";eval(require(\"node:fs\").readFileSync(\"{path}\",\"utf8\"))}}finally{{require(\"node:fs\").rmSync(\"{path}\",{{force:true}})}}",
   ))
 }
 

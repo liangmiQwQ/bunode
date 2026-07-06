@@ -2,6 +2,7 @@ undefined
 3
 {"execArgv":["-p"],"argv":["-","arg"]}
 function
+{"file":"[stdin]","dir":"."}
 42
 2
 expr

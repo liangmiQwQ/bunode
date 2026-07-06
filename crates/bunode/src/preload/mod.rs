@@ -59,8 +59,23 @@ fn prepare_in_directory(directory: &Path, preload_file_name: &str) -> io::Result
 }
 
 fn prepare_temporary(preload_file_name: &str) -> io::Result<PathBuf> {
-  // Some installations keep the Bun directory read-only, so fall back to a shared stable copy.
-  prepare_in_directory(&env::temp_dir(), preload_file_name)
+  // Some installations keep the Bun directory read-only, so fall back to a per-user stable copy.
+  prepare_in_directory(&fallback_preload_directory(), preload_file_name)
+}
+
+fn fallback_preload_directory() -> PathBuf {
+  if cfg!(windows) {
+    return env::var_os("LOCALAPPDATA")
+      .or_else(|| env::var_os("USERPROFILE"))
+      .map_or_else(env::temp_dir, PathBuf::from)
+      .join("bunode");
+  }
+
+  env::var_os("XDG_CACHE_HOME")
+    .map(PathBuf::from)
+    .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+    .unwrap_or_else(env::temp_dir)
+    .join("bunode")
 }
 
 fn write_private_preload_file(directory: &Path, prefix: &str, suffix: &str) -> io::Result<PathBuf> {

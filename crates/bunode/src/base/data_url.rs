@@ -1,8 +1,11 @@
 //! `data:` JavaScript module materialization for Bun preload compatibility.
 
 use std::{
-  env, fs, io,
+  env,
+  fs::{self, OpenOptions},
+  io::{self, Write},
   path::{Path, PathBuf},
+  time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::error::CliError;
@@ -132,8 +135,7 @@ fn write_content_addressed_file(path: &Path, source: &[u8]) -> io::Result<()> {
     return Ok(());
   }
 
-  let temporary_path = path.with_extension(format!("{}.tmp", std::process::id()));
-  fs::write(&temporary_path, source)?;
+  let temporary_path = write_private_temporary_file(path, source)?;
 
   match fs::rename(&temporary_path, path) {
     Ok(()) => Ok(()),
@@ -146,6 +148,38 @@ fn write_content_addressed_file(path: &Path, source: &[u8]) -> io::Result<()> {
       Err(error)
     }
   }
+}
+
+fn write_private_temporary_file(path: &Path, source: &[u8]) -> io::Result<PathBuf> {
+  let directory = path.parent().unwrap_or_else(|| Path::new("."));
+  let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("bunode-data-import");
+  let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+
+  for attempt in 0..32 {
+    let temporary_path =
+      directory.join(format!(".{file_name}.{}.{timestamp}.{attempt}.tmp", std::process::id()));
+    let mut options = OpenOptions::new();
+
+    options.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+      use std::os::unix::fs::OpenOptionsExt;
+
+      options.mode(0o600);
+    }
+
+    match options.open(&temporary_path) {
+      Ok(mut file) => {
+        file.write_all(source)?;
+        return Ok(temporary_path);
+      }
+      Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+      Err(error) => return Err(error),
+    }
+  }
+
+  Err(io::Error::new(io::ErrorKind::AlreadyExists, "failed to create data URL import file"))
 }
 
 fn fnv1a(value: &[u8]) -> u64 {
