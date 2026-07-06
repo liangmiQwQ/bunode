@@ -2,19 +2,6 @@
 
 use std::{ffi::OsString, fmt, process::ExitCode};
 
-use clap::Command;
-
-pub trait CliOptionSchema {
-  fn augment_command(command: Command) -> Command;
-}
-
-pub fn option_command<Schema>() -> Command
-where
-  Schema: CliOptionSchema,
-{
-  Schema::augment_command(Command::new("node").disable_help_flag(true).disable_version_flag(true))
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct BunodeCommandOption {
   pub argv0: OsString,
@@ -50,8 +37,7 @@ impl CliError {
     Self { message: format!("bunode: {}", message.into()), exit_code: 1 }
   }
 
-  pub fn exit(&self) -> ExitCode {
-    eprintln!("{self}");
+  pub fn exit_code(&self) -> ExitCode {
     ExitCode::from(self.exit_code)
   }
 }
@@ -61,3 +47,5 @@ impl fmt::Display for CliError {
     formatter.write_str(&self.message)
   }
 }
+
+impl std::error::Error for CliError {}

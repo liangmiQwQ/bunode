@@ -2,7 +2,7 @@
 
 use std::{fs, io, path::PathBuf, process};
 
-use crate::bun;
+use crate::{bun, error::BunodeError};
 
 pub const EXEC_PATH_ENV: &str = "BUNODE_EXEC_PATH";
 pub const ARGV0_ENV: &str = "BUNODE_ARGV0";
@@ -11,7 +11,7 @@ pub const DROP_STDIN_ARGV_ENV: &str = "BUNODE_DROP_STDIN_ARGV";
 
 const PRELOAD_SOURCE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/preload.min.js"));
 
-pub fn prepare() -> io::Result<PathBuf> {
+pub fn prepare() -> Result<PathBuf, BunodeError> {
   let bun_path = bun::path()?;
   let bun_directory = bun_path
     .parent()
@@ -37,7 +37,7 @@ pub fn prepare() -> io::Result<PathBuf> {
     }
     Err(error) => {
       let _ = fs::remove_file(&temporary_path);
-      return Err(error);
+      return Err(error.into());
     }
   }
 

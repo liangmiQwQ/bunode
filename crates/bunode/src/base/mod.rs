@@ -9,4 +9,5 @@ mod env_file;
 mod options;
 mod parser;
 
+pub use options::{OptionShape, option_shape_for_bun};
 pub use parser::parse;

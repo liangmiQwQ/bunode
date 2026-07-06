@@ -18,7 +18,7 @@ pub fn command() -> Result<Command, BunodeError> {
 
 pub fn path() -> Result<PathBuf, BunodeError> {
   let executable = env::current_exe()?;
-  let executable_dir = executable.parent().ok_or_else(|| BunodeError::BunBinaryNotFound())?;
+  let executable_dir = executable.parent().ok_or(BunodeError::BunBinaryNotFound())?;
 
   #[cfg(windows)]
   let result = { executable_dir.join("bun").join("bun.exe") };

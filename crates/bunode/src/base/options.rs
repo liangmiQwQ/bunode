@@ -1,8 +1,12 @@
 //! Supported Node and Bunode option table.
 
 use clap::{Arg, ArgAction, Command};
+use semver::Version;
 
-use crate::cli::{self, CliOptionSchema};
+#[derive(Clone, Copy)]
+pub struct OptionShape {
+  specs: &'static [OptionSpec],
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct OptionSpec {
@@ -52,17 +56,32 @@ pub(super) struct OptionHelp {
   pub(super) description: &'static str,
 }
 
-pub(super) struct BaseOptionSchema;
-
-impl CliOptionSchema for BaseOptionSchema {
-  fn augment_command(command: Command) -> Command {
-    OPTION_SPECS.iter().fold(command, |command, spec| command.arg(spec.clap_arg()))
-  }
+#[cfg(test)]
+fn clap_command() -> Command {
+  clap_command_for(&option_shape_for_bun_baseline())
 }
 
-pub(super) fn clap_command() -> Command {
-  cli::option_command::<BaseOptionSchema>()
-    .override_usage("node [options] [ script.js ] [arguments]")
+pub fn clap_command_for(shape: &OptionShape) -> Command {
+  let command = Command::new("node")
+    .disable_help_flag(true)
+    .disable_version_flag(true)
+    .override_usage("node [options] [ script.js ] [arguments]");
+
+  shape.specs.iter().fold(command, |command, spec| command.arg(spec.clap_arg()))
+}
+
+pub const fn option_shape_for_bun(_version: &Version) -> OptionShape {
+  option_shape_for_bun_baseline()
+}
+
+const fn option_shape_for_bun_baseline() -> OptionShape {
+  OptionShape { specs: OPTION_SPECS }
+}
+
+impl OptionShape {
+  pub(super) const fn specs(&self) -> &'static [OptionSpec] {
+    self.specs
+  }
 }
 
 macro_rules! option_spec {
@@ -472,12 +491,12 @@ pub(super) const OPTION_SPECS: &[OptionSpec] = &[
   ),
 ];
 
-pub(super) fn find_long_option(name: &str) -> Option<&'static OptionSpec> {
-  OPTION_SPECS.iter().find(|spec| spec.long.contains(&name))
+pub(super) fn find_long_option(shape: &OptionShape, name: &str) -> Option<&'static OptionSpec> {
+  shape.specs.iter().find(|spec| spec.long.contains(&name))
 }
 
-pub(super) fn find_short_option(short: char) -> Option<&'static OptionSpec> {
-  OPTION_SPECS.iter().find(|spec| spec.short == Some(short))
+pub(super) fn find_short_option(shape: &OptionShape, short: char) -> Option<&'static OptionSpec> {
+  shape.specs.iter().find(|spec| spec.short == Some(short))
 }
 
 impl OptionSpec {

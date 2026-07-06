@@ -8,7 +8,7 @@ use crate::cli::{BunodeCommandOption, CliError, NodeCommand};
 use super::{
   builtins, data_url, env_file,
   options::{
-    HelpSection, OptionAction, OptionSpec, PreloadKind, ValueMode, find_long_option,
+    HelpSection, OptionAction, OptionShape, OptionSpec, PreloadKind, ValueMode, find_long_option,
     find_short_option,
   },
 };
@@ -64,7 +64,11 @@ struct ParseState {
   operands: Vec<OsString>,
 }
 
-pub fn parse<I, T>(args: I, node_options: Option<OsString>) -> Result<BunodeCommandOption, CliError>
+pub fn parse<I, T>(
+  args: I,
+  node_options: Option<OsString>,
+  shape: &OptionShape,
+) -> Result<BunodeCommandOption, CliError>
 where
   I: IntoIterator<Item = T>,
   T: Into<OsString>,
@@ -72,21 +76,22 @@ where
   let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
 
   if node_options.is_none() {
-    let (invocation, env_file_node_options) = parse_once(&args, None)?;
+    let (invocation, env_file_node_options) = parse_once(&args, None, shape)?;
 
     if env_file_node_options.as_ref().is_some_and(|value| !value.is_empty()) {
-      return parse_once(&args, env_file_node_options).map(|(invocation, _)| invocation);
+      return parse_once(&args, env_file_node_options, shape).map(|(invocation, _)| invocation);
     }
 
     return Ok(invocation);
   }
 
-  parse_once(&args, node_options).map(|(invocation, _)| invocation)
+  parse_once(&args, node_options, shape).map(|(invocation, _)| invocation)
 }
 
 fn parse_once(
   args: &[OsString],
   node_options: Option<OsString>,
+  shape: &OptionShape,
 ) -> Result<(BunodeCommandOption, Option<OsString>), CliError> {
   // 1. Keep argv0 for process.argv0 correction in the generated preload.
   let argv0 = args.first().cloned().unwrap_or_else(|| OsString::from("node"));
@@ -95,11 +100,11 @@ fn parse_once(
   // 2. NODE_OPTIONS behaves as if it appears before CLI flags.
   if let Some(node_options) = node_options.filter(|value| !value.is_empty()) {
     let node_options = split_node_options(&node_options)?;
-    parse_tokens(&node_options, Source::NodeOptions, &mut state)?;
+    parse_tokens(&node_options, Source::NodeOptions, &mut state, shape)?;
   }
 
   // 3. CLI operands stop option parsing once the script position is reached.
-  parse_tokens(args.get(1..).unwrap_or_default(), Source::CommandLine, &mut state)?;
+  parse_tokens(args.get(1..).unwrap_or_default(), Source::CommandLine, &mut state, shape)?;
 
   let parsed = state.finish()?;
   let env_file_node_options = parsed.env_file_node_options;
@@ -128,6 +133,7 @@ fn parse_tokens(
   tokens: &[OsString],
   source: Source,
   state: &mut ParseState,
+  shape: &OptionShape,
 ) -> Result<(), CliError> {
   let mut index = 0;
 
@@ -170,9 +176,9 @@ fn parse_tokens(
     }
 
     if token_text.starts_with("--") {
-      index = parse_long_option(tokens, index, source, state)?;
+      index = parse_long_option(tokens, index, source, state, shape)?;
     } else {
-      index = parse_short_option(tokens, index, source, state)?;
+      index = parse_short_option(tokens, index, source, state, shape)?;
     }
   }
 
@@ -184,10 +190,11 @@ fn parse_long_option(
   index: usize,
   source: Source,
   state: &mut ParseState,
+  shape: &OptionShape,
 ) -> Result<usize, CliError> {
   let token = tokens[index].to_string_lossy();
   let (name, inline_value) = split_long_option(&token);
-  let Some(spec) = find_long_option(name) else {
+  let Some(spec) = find_long_option(shape, name) else {
     return Err(unsupported_option(name));
   };
 
@@ -234,17 +241,18 @@ fn parse_short_option(
   index: usize,
   source: Source,
   state: &mut ParseState,
+  shape: &OptionShape,
 ) -> Result<usize, CliError> {
   let token = tokens[index].to_string_lossy();
 
   if token == "-pe" {
-    return parse_print_eval_shortcut(tokens, index, source, state);
+    return parse_print_eval_shortcut(tokens, index, source, state, shape);
   }
 
   let Some(short) = token[1..].chars().next() else {
     return Err(unsupported_option(&token));
   };
-  let Some(spec) = find_short_option(short) else {
+  let Some(spec) = find_short_option(shape, short) else {
     return Err(unsupported_option(&token));
   };
   let rest = &token[(1 + short.len_utf8())..];
@@ -276,9 +284,10 @@ fn parse_print_eval_shortcut(
   index: usize,
   source: Source,
   state: &mut ParseState,
+  shape: &OptionShape,
 ) -> Result<usize, CliError> {
-  let print_spec = find_short_option('p').ok_or_else(|| unsupported_option("-p"))?;
-  let eval_spec = find_short_option('e').ok_or_else(|| unsupported_option("-e"))?;
+  let print_spec = find_short_option(shape, 'p').ok_or_else(|| unsupported_option("-p"))?;
+  let eval_spec = find_short_option(shape, 'e').ok_or_else(|| unsupported_option("-e"))?;
   let value = required_next_token(tokens, index + 1, "-e")?;
 
   apply_option(print_spec, None, source, state)?;
@@ -576,19 +585,25 @@ impl ParseState {
 mod tests {
   use std::ffi::OsString;
 
+  use semver::Version;
+
   use crate::cli::{BunodeCommandOption, NodeCommand};
 
   use super::parse;
 
   fn parse_cli(args: &[&str]) -> Result<BunodeCommandOption, crate::cli::CliError> {
-    parse(args, None)
+    let shape = super::super::options::option_shape_for_bun(&Version::new(1, 3, 14));
+
+    parse(args, None, &shape)
   }
 
   fn parse_with_node_options(
     args: &[&str],
     node_options: &str,
   ) -> Result<BunodeCommandOption, crate::cli::CliError> {
-    parse(args, Some(OsString::from(node_options)))
+    let shape = super::super::options::option_shape_for_bun(&Version::new(1, 3, 14));
+
+    parse(args, Some(OsString::from(node_options)), &shape)
   }
 
   #[test]

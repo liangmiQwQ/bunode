@@ -6,6 +6,22 @@ use semver::{BuildMetadata, Version};
 
 use crate::{bun, error::BunodeError};
 
+#[derive(Clone, Debug)]
+pub struct RuntimeVersions {
+  pub bun: Version,
+  masqueraded: Version,
+}
+
+pub fn current() -> Result<RuntimeVersions, BunodeError> {
+  Ok(RuntimeVersions { bun: bun_version()?, masqueraded: masqueraded_version()? })
+}
+
+impl RuntimeVersions {
+  pub fn bunode_version_text(&self) -> String {
+    format!("v{}", bunode_version(&self.bun, &self.masqueraded))
+  }
+}
+
 pub fn bunode_version(bun_version: &Version, masqueraded_version: &Version) -> Version {
   let mut version =
     Version::new(masqueraded_version.major, masqueraded_version.minor, masqueraded_version.patch);
@@ -24,20 +40,21 @@ pub fn bunode_version(bun_version: &Version, masqueraded_version: &Version) -> V
 pub fn bun_version() -> Result<Version, BunodeError> {
   let bun_version = read_bun_version_from_output(&["--version"])?;
 
-  match Version::parse(&bun_version) {
-    Ok(version) => check_bun_semver(version),
-    Err(_) => Err(BunodeError::BadBunVersion(bun_version)),
-  }
+  parse_version_output(&bun_version)
+    .map_err(|_| BunodeError::BadBunVersion(bun_version))
+    .and_then(check_bun_semver)
 }
 
 /// For performance, we should only call this once, and cache its result
 pub fn masqueraded_version() -> Result<Version, BunodeError> {
   let bun_version = read_bun_version_from_output(&["-p", "process.version"])?;
 
-  match Version::parse(&bun_version) {
-    Ok(version) => Ok(version),
-    Err(_) => Err(BunodeError::BadNodeCompatibleShimVersion(bun_version)),
-  }
+  parse_version_output(&bun_version)
+    .map_err(|_| BunodeError::BadNodeCompatibleShimVersion(bun_version))
+}
+
+fn parse_version_output(value: &str) -> Result<Version, semver::Error> {
+  Version::parse(value.strip_prefix('v').unwrap_or(value))
 }
 
 fn read_bun_version_from_output(args: &[&str]) -> Result<String, BunodeError> {
@@ -66,11 +83,23 @@ fn check_bun_semver(version: Version) -> Result<Version, BunodeError> {
 
 #[cfg(test)]
 mod tests {
+  use semver::Version;
+
+  use super::{bunode_version, parse_version_output};
+
   #[test]
   fn version_metadata_should_keep_node_version_precedence() {
-    let node_version = "v24.3.0";
-    let bun_version = "1.3.14";
+    let node_version = Version::new(24, 3, 0);
+    let bun_version = Version::new(1, 3, 14);
 
-    assert_eq!(format!("{node_version}+bun.{bun_version}"), "v24.3.0+bun.1.3.14");
+    assert_eq!(format!("v{}", bunode_version(&bun_version, &node_version)), "v24.3.0+bun.1.3.14");
+  }
+
+  #[test]
+  fn version_output_should_accept_node_v_prefix() -> Result<(), semver::Error> {
+    assert_eq!(parse_version_output("v24.3.0")?, Version::new(24, 3, 0));
+    assert_eq!(parse_version_output("1.3.14")?, Version::new(1, 3, 14));
+
+    Ok(())
   }
 }

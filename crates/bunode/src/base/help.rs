@@ -1,6 +1,6 @@
 //! Supported Bunode help generation.
 
-use super::options::{HelpSection, OPTION_SPECS, OptionSpec, ValueMode};
+use super::options::{HelpSection, OptionShape, OptionSpec, ValueMode};
 
 const OPTION_COLUMN_WIDTH: usize = 31;
 const NODE_SPECIAL_ROWS: &[(&str, &str)] = &[
@@ -8,25 +8,25 @@ const NODE_SPECIAL_ROWS: &[(&str, &str)] = &[
   ("--", "indicate the end of node options"),
 ];
 
-pub fn print() {
+pub fn print(shape: &OptionShape) {
   // Keep the custom help text tied to the same Clap schema future parsers can reuse.
-  super::options::clap_command().debug_assert();
+  super::options::clap_command_for(shape).debug_assert();
 
   println!("Usage: node [options] [ script.js ] [arguments]");
   println!();
   println!("Options:");
   print_rows(NODE_SPECIAL_ROWS.iter().copied());
-  print_option_section(HelpSection::Node);
+  print_option_section(shape, HelpSection::Node);
   println!();
   println!("Bun-specific options:");
-  print_option_section(HelpSection::Bun);
+  print_option_section(shape, HelpSection::Bun);
   println!();
   println!("Environment variables:");
   print_row("NODE_OPTIONS", "environment-allowed Node options are translated before CLI options");
 }
 
-fn print_option_section(section: HelpSection) {
-  let rows = OPTION_SPECS.iter().filter_map(|spec| {
+fn print_option_section(shape: &OptionShape, section: HelpSection) {
+  let rows = shape.specs().iter().filter_map(|spec| {
     let help = spec.help?;
 
     if help.section == section {

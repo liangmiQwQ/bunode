@@ -1,9 +1,14 @@
-use std::{io, path::PathBuf};
+use std::{io, path::PathBuf, process::ExitCode};
 
 use thiserror::Error;
 
+use crate::cli::CliError;
+
 #[derive(Error, Debug)]
 pub enum BunodeError {
+  #[error(transparent)]
+  Cli(#[from] CliError),
+
   // ---- Finding and execute bun binary ----------------------
   #[error("Error to execute bun binary: {0}")]
   CommandExecution(#[from] io::Error),
@@ -26,4 +31,20 @@ pub enum BunodeError {
 
   #[error("Bun {0} is not supported. Please use a stable Bun >=1.4.0.")]
   UnsupporttedBunVersion(String),
+}
+
+impl BunodeError {
+  pub fn exit_code(&self) -> ExitCode {
+    match self {
+      Self::Cli(error) => error.exit_code(),
+      _ => ExitCode::from(1),
+    }
+  }
+
+  pub fn print(&self) {
+    match self {
+      Self::Cli(error) => eprintln!("{error}"),
+      _ => eprintln!("bunode: {self}"),
+    }
+  }
 }
