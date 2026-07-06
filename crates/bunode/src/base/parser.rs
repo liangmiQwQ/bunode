@@ -481,6 +481,7 @@ fn apply_option(
         validate_env_file(&value)?;
 
         if source == Source::CommandLine
+          && spec.help.is_some_and(|help| help.section == HelpSection::Node)
           && let Some(node_options) = env_file::read_node_options(&value)?
         {
           state.env_file_node_options = Some(node_options);
@@ -495,6 +496,8 @@ fn apply_option(
       state.bun_options.push(join_option_value(name, value));
     }
     OptionAction::ForwardOptionalValue(name) => {
+      let value = value.or_else(|| default_optional_value(name).map(OsString::from));
+
       state
         .bun_options
         .push(value.map_or_else(|| OsString::from(name), |value| join_option_value(name, value)));
@@ -516,6 +519,13 @@ fn join_option_value(name: &str, value: OsString) -> OsString {
   option.push("=");
   option.push(value);
   option
+}
+
+fn default_optional_value(name: &str) -> Option<&'static str> {
+  match name {
+    "--inspect" | "--inspect-brk" | "--inspect-wait" => Some("127.0.0.1:9229"),
+    _ => None,
+  }
 }
 
 fn validate_env_file(path: &OsStr) -> Result<(), CliError> {
@@ -703,7 +713,7 @@ mod tests {
         argv0: OsString::from("node"),
         command: NodeCommand::Script(OsString::from("script.js")),
         exec_argv: vec![OsString::from("--inspect")],
-        bun_options: vec![OsString::from("--inspect")],
+        bun_options: vec![OsString::from("--inspect=127.0.0.1:9229")],
         script_arguments: vec![OsString::from("--help"), OsString::from("--flag")],
       },
     );
@@ -1088,6 +1098,27 @@ mod tests {
         OsString::from("--conditions=cli"),
       ],
     );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_not_read_node_options_from_bun_env_file() -> Result<(), crate::error::CliError> {
+    let path = std::env::temp_dir().join(format!(
+      "bunode-bun-env-file-{}-{}.env",
+      std::process::id(),
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos(),
+    ));
+    std::fs::write(&path, "NODE_OPTIONS=\"--eval 1\"\n").expect("test env file should be writable");
+    let path = path.to_string_lossy().to_string();
+
+    let options = parse_cli(&["node", "--bun-env-file", &path, "-e", "0"])?;
+    std::fs::remove_file(&path).expect("test env file should be removable");
+
+    assert_eq!(options.bun_options, vec![super::join_option_value("--env-file", path.into())]);
 
     Ok(())
   }

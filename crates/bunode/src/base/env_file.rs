@@ -58,18 +58,12 @@ fn parse_value(value: &str) -> String {
 
 fn parse_quoted_value(value: &str, quote: char) -> String {
   let mut result = String::new();
-  let mut characters = value[quote.len_utf8()..].chars();
-  let mut escaped = false;
+  let mut characters = value[quote.len_utf8()..].chars().peekable();
 
-  for character in &mut characters {
-    if escaped {
-      result.push(character);
-      escaped = false;
-      continue;
-    }
-
-    if quote == '"' && character == '\\' {
-      escaped = true;
+  while let Some(character) = characters.next() {
+    if quote == '"' && character == '\\' && characters.peek() == Some(&quote) {
+      result.push(quote);
+      let _ = characters.next();
       continue;
     }
 
@@ -118,6 +112,14 @@ mod tests {
     assert_eq!(
       parse_assignment("NODE_OPTIONS=--conditions=from-env#comment"),
       Some(("NODE_OPTIONS", "--conditions=from-env".to_string())),
+    );
+    assert_eq!(
+      parse_assignment(r#"NODE_OPTIONS="--require C:\tmp\preload.js""#),
+      Some(("NODE_OPTIONS", r"--require C:\tmp\preload.js".to_string())),
+    );
+    assert_eq!(
+      parse_assignment(r#"NODE_OPTIONS="--require ./x\" y.js""#),
+      Some(("NODE_OPTIONS", r#"--require ./x" y.js"#.to_string())),
     );
   }
 

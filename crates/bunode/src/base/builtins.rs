@@ -7,6 +7,11 @@ const BUILTIN_MODULES: &[&str] = &[
   "_http_incoming",
   "_http_outgoing",
   "_http_server",
+  "_stream_duplex",
+  "_stream_passthrough",
+  "_stream_readable",
+  "_stream_transform",
+  "_stream_writable",
   "_tls_common",
   "_tls_wrap",
   "assert",
@@ -85,6 +90,7 @@ mod tests {
     assert!(is_builtin_module("fs/promises"));
     assert!(is_builtin_module("node:fs"));
     assert!(is_builtin_module("node:test"));
+    assert!(is_builtin_module("_stream_readable"));
     assert!(!is_builtin_module("./fs.js"));
   }
 }

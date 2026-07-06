@@ -133,7 +133,7 @@ fn normalize_script_name(script: &OsStr) -> OsString {
 
   let script_text = script.to_string_lossy();
 
-  if script_text.contains('/') || script_text.contains('\\') {
+  if has_path_separator(&script_text) {
     return script.to_os_string();
   }
 
@@ -149,7 +149,11 @@ fn script_requires_explicit_relative_path(script: &OsStr) -> bool {
 
   let script = script.to_string_lossy();
 
-  script.starts_with('-') && !script.contains('/') && !script.contains('\\')
+  script.starts_with('-') && !has_path_separator(&script)
+}
+
+fn has_path_separator(value: &str) -> bool {
+  value.contains('/') || (cfg!(windows) && value.contains('\\'))
 }
 
 fn join_option_value(name: &str, value: &OsStr) -> OsString {
@@ -321,5 +325,19 @@ mod tests {
       error.to_string(),
       "bunode: script `--script.js` starts with `-`; pass it with an explicit relative path like `./--script.js`.",
     );
+  }
+
+  #[cfg(not(windows))]
+  #[test]
+  fn script_mode_should_prefix_unix_script_names_with_backslashes() {
+    let invocation = invocation(NodeCommand::Script(OsString::from(r"foo\bar.js")));
+    let script = OsString::from(r"foo\bar.js");
+    let args = build_bun_args(
+      &invocation,
+      &BunMode::Script(script.as_os_str()),
+      Path::new("/tmp/preload.js"),
+    );
+
+    assert_eq!(args[5], OsString::from(r"./foo\bar.js"));
   }
 }

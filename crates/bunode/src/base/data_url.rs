@@ -14,6 +14,7 @@ pub(super) fn materialize_javascript_module(specifier: &str) -> Result<Option<Pa
   let Some((metadata, payload)) = rest.split_once(',') else {
     return Err(CliError::new("invalid data URL passed to --import"));
   };
+  let payload = strip_fragment(payload);
 
   if !is_javascript_metadata(metadata) {
     return Ok(None);
@@ -30,7 +31,8 @@ pub(super) fn materialize_javascript_module(specifier: &str) -> Result<Option<Pa
 fn is_javascript_metadata(metadata: &str) -> bool {
   let media_type = metadata.split(';').next().unwrap_or_default();
 
-  matches!(media_type, "text/javascript" | "application/javascript")
+  media_type.eq_ignore_ascii_case("text/javascript")
+    || media_type.eq_ignore_ascii_case("application/javascript")
 }
 
 fn decode_payload(metadata: &str, payload: &str) -> Result<Vec<u8>, CliError> {
@@ -39,6 +41,10 @@ fn decode_payload(metadata: &str, payload: &str) -> Result<Vec<u8>, CliError> {
   }
 
   decode_percent(payload)
+}
+
+fn strip_fragment(payload: &str) -> &str {
+  payload.split_once('#').map_or(payload, |(payload, _)| payload)
 }
 
 fn decode_percent(value: &str) -> Result<Vec<u8>, CliError> {
@@ -170,6 +176,27 @@ mod tests {
   fn should_materialize_javascript_data_import() -> Result<(), crate::error::CliError> {
     let path =
       materialize_javascript_module("data:text/javascript,globalThis.loaded%3D1")?.unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
+
+    Ok(())
+  }
+
+  #[test]
+  fn should_materialize_case_insensitive_javascript_data_import()
+  -> Result<(), crate::error::CliError> {
+    let path =
+      materialize_javascript_module("data:Text/JavaScript,globalThis.loaded%3D1")?.unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
+
+    Ok(())
+  }
+
+  #[test]
+  fn should_strip_data_import_fragment() -> Result<(), crate::error::CliError> {
+    let path =
+      materialize_javascript_module("data:text/javascript,globalThis.loaded%3D1#cache")?.unwrap();
 
     assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
 
