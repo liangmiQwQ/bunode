@@ -18,5 +18,8 @@ oxc_minifier = { workspace = true }
 oxc_parser = { workspace = true }
 oxc_span = { workspace = true }
 
+[dependencies]
+clap = { workspace = true }
+
 [lints]
 workspace = true

@@ -1,8 +1,11 @@
 undefined
 3
+{"execArgv":["-p"],"argv":["-","arg"]}
+42
 2
 expr
 ["a","--","b"]
+["--","--"]
 {"execArgv":["-p","JSON.stringify({ execArgv: process.execArgv, argv: process.argv.slice(1) })","--conditions","custom"],"argv":["arg"]}
 undefined
 print

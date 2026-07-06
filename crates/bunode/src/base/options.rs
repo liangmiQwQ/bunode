@@ -1,5 +1,9 @@
 //! Supported Node and Bunode option table.
 
+use clap::{Arg, ArgAction, Command};
+
+use crate::cli::{self, CliOptionSchema};
+
 #[derive(Clone, Copy)]
 pub(super) struct OptionSpec {
   pub(super) long: &'static [&'static str],
@@ -46,6 +50,19 @@ pub(super) struct OptionHelp {
   pub(super) section: HelpSection,
   pub(super) value_name: Option<&'static str>,
   pub(super) description: &'static str,
+}
+
+pub(super) struct BaseOptionSchema;
+
+impl CliOptionSchema for BaseOptionSchema {
+  fn augment_command(command: Command) -> Command {
+    OPTION_SPECS.iter().fold(command, |command, spec| command.arg(spec.clap_arg()))
+  }
+}
+
+pub(super) fn clap_command() -> Command {
+  cli::option_command::<BaseOptionSchema>()
+    .override_usage("node [options] [ script.js ] [arguments]")
 }
 
 macro_rules! option_spec {
@@ -454,3 +471,55 @@ pub(super) const OPTION_SPECS: &[OptionSpec] = &[
     "restart on file changes",
   ),
 ];
+
+pub(super) fn find_long_option(name: &str) -> Option<&'static OptionSpec> {
+  OPTION_SPECS.iter().find(|spec| spec.long.contains(&name))
+}
+
+pub(super) fn find_short_option(short: char) -> Option<&'static OptionSpec> {
+  OPTION_SPECS.iter().find(|spec| spec.short == Some(short))
+}
+
+impl OptionSpec {
+  fn clap_arg(&self) -> Arg {
+    let help = self.help;
+    let mut arg = Arg::new(strip_long_name(self.long[0]))
+      .long(strip_long_name(self.long[0]))
+      .help(help.map(|help| help.description).unwrap_or_default());
+
+    for alias in &self.long[1..] {
+      arg = arg.alias(strip_long_name(alias));
+    }
+
+    if let Some(short) = self.short {
+      arg = arg.short(short);
+    }
+
+    match self.value {
+      ValueMode::None => arg.action(ArgAction::SetTrue),
+      ValueMode::Required => arg
+        .action(ArgAction::Set)
+        .value_name(help.and_then(|help| help.value_name).unwrap_or("..."))
+        .num_args(1),
+      ValueMode::OptionalEquals => arg
+        .action(ArgAction::Set)
+        .value_name(help.and_then(|help| help.value_name).unwrap_or("..."))
+        .num_args(0..=1)
+        .require_equals(true),
+    }
+  }
+}
+
+fn strip_long_name(name: &'static str) -> &'static str {
+  name.strip_prefix("--").unwrap_or(name)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::clap_command;
+
+  #[test]
+  fn option_specs_should_build_valid_clap_command() {
+    clap_command().debug_assert();
+  }
+}

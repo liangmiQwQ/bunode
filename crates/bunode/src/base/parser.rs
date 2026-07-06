@@ -5,7 +5,13 @@ use std::path::Path;
 
 use crate::cli::{BunodeCommandOption, CliError, NodeCommand};
 
-use super::options::{HelpSection, OPTION_SPECS, OptionAction, OptionSpec, PreloadKind, ValueMode};
+use super::{
+  builtins, env_file,
+  options::{
+    HelpSection, OptionAction, OptionSpec, PreloadKind, ValueMode, find_long_option,
+    find_short_option,
+  },
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {
@@ -53,6 +59,7 @@ struct ParseState {
   bun_options: Vec<OsString>,
   common_js_preloads: Vec<OsString>,
   es_module_preloads: Vec<OsString>,
+  env_file_node_options: Option<OsString>,
   operands: Vec<OsString>,
 }
 
@@ -61,9 +68,27 @@ where
   I: IntoIterator<Item = T>,
   T: Into<OsString>,
 {
+  let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+
+  if node_options.is_none() {
+    let (invocation, env_file_node_options) = parse_once(&args, None)?;
+
+    if env_file_node_options.as_ref().is_some_and(|value| !value.is_empty()) {
+      return parse_once(&args, env_file_node_options).map(|(invocation, _)| invocation);
+    }
+
+    return Ok(invocation);
+  }
+
+  parse_once(&args, node_options).map(|(invocation, _)| invocation)
+}
+
+fn parse_once(
+  args: &[OsString],
+  node_options: Option<OsString>,
+) -> Result<(BunodeCommandOption, Option<OsString>), CliError> {
   // 1. Keep argv0 for process.argv0 correction in the generated preload.
-  let mut args = args.into_iter().map(Into::into);
-  let argv0 = args.next().unwrap_or_else(|| OsString::from("node"));
+  let argv0 = args.first().cloned().unwrap_or_else(|| OsString::from("node"));
   let mut state = ParseState::default();
 
   // 2. NODE_OPTIONS behaves as if it appears before CLI flags.
@@ -73,24 +98,28 @@ where
   }
 
   // 3. CLI operands stop option parsing once the script position is reached.
-  let args = args.collect::<Vec<_>>();
-  parse_tokens(&args, Source::CommandLine, &mut state)?;
+  parse_tokens(args.get(1..).unwrap_or_default(), Source::CommandLine, &mut state)?;
 
   let parsed = state.finish()?;
+  let env_file_node_options = parsed.env_file_node_options;
 
-  Ok(BunodeCommandOption {
-    argv0,
-    command: parsed.command,
-    exec_argv: parsed.exec_argv,
-    bun_options: parsed.bun_options,
-    script_arguments: parsed.script_arguments,
-  })
+  Ok((
+    BunodeCommandOption {
+      argv0,
+      command: parsed.command,
+      exec_argv: parsed.exec_argv,
+      bun_options: parsed.bun_options,
+      script_arguments: parsed.script_arguments,
+    },
+    env_file_node_options,
+  ))
 }
 
 struct ParsedState {
   command: NodeCommand,
   exec_argv: Vec<OsString>,
   bun_options: Vec<OsString>,
+  env_file_node_options: Option<OsString>,
   script_arguments: Vec<OsString>,
 }
 
@@ -111,6 +140,12 @@ fn parse_tokens(
       }
 
       state.operand_boundary = OperandBoundary::DoubleDash;
+      state.operands.extend(tokens[(index + 1)..].iter().cloned());
+      break;
+    }
+
+    if token_text == "-" && state.should_capture_print_expression(source) {
+      state.operands.push(token);
       state.operands.extend(tokens[(index + 1)..].iter().cloned());
       break;
     }
@@ -275,14 +310,6 @@ fn required_next_token(
   Ok(value.clone())
 }
 
-fn find_long_option(name: &str) -> Option<&'static OptionSpec> {
-  OPTION_SPECS.iter().find(|spec| spec.long.contains(&name))
-}
-
-fn find_short_option(short: char) -> Option<&'static OptionSpec> {
-  OPTION_SPECS.iter().find(|spec| spec.short == Some(short))
-}
-
 fn record_exec_argv(
   spec: &OptionSpec,
   source: Source,
@@ -329,7 +356,13 @@ fn apply_option(
       state.print_operand_mode = PrintOperandMode::Expression;
     }
     OptionAction::Preload(kind) => {
-      let value = join_option_value("--preload", required_action_value(value, spec)?);
+      let value = required_action_value(value, spec)?;
+
+      if builtins::is_builtin_module(&value.to_string_lossy()) {
+        return Ok(());
+      }
+
+      let value = join_option_value("--preload", value);
 
       match kind {
         PreloadKind::CommonJs => state.common_js_preloads.push(value),
@@ -342,6 +375,12 @@ fn apply_option(
 
       if name == "--env-file" {
         validate_env_file(&value)?;
+
+        if source == Source::CommandLine
+          && let Some(node_options) = env_file::read_node_options(&value)?
+        {
+          state.env_file_node_options = Some(node_options);
+        }
       }
 
       state.bun_options.push(join_option_value(name, value));
@@ -447,7 +486,13 @@ impl ParseState {
     bun_options.extend(self.common_js_preloads);
     bun_options.extend(self.es_module_preloads);
 
-    Ok(ParsedState { command, exec_argv: self.exec_argv, bun_options, script_arguments })
+    Ok(ParsedState {
+      command,
+      exec_argv: self.exec_argv,
+      bun_options,
+      env_file_node_options: self.env_file_node_options,
+      script_arguments,
+    })
   }
 
   fn command(&mut self) -> Result<(NodeCommand, usize), CliError> {
@@ -470,6 +515,12 @@ impl ParseState {
       };
 
       return Ok((command, 0));
+    }
+
+    if self.print_mode == PrintMode::Enabled
+      && self.operands.first().is_some_and(|operand| operand == OsStr::new("-"))
+    {
+      return Ok((NodeCommand::PrintStdin, 0));
     }
 
     if self.print_mode == PrintMode::Enabled
@@ -658,6 +709,24 @@ mod tests {
   }
 
   #[test]
+  fn parse_should_treat_dash_print_operand_as_stdin_argument() -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "-p", "-", "arg"])?;
+
+    assert_eq!(
+      options,
+      BunodeCommandOption {
+        argv0: OsString::from("node"),
+        command: NodeCommand::PrintStdin,
+        exec_argv: vec![OsString::from("-p")],
+        bun_options: Vec::new(),
+        script_arguments: vec![OsString::from("-"), OsString::from("arg")],
+      },
+    );
+
+    Ok(())
+  }
+
+  #[test]
   fn parse_should_treat_print_after_double_dash_as_script() -> Result<(), crate::cli::CliError> {
     let options = parse_cli(&["node", "-p", "--", "script.js", "--flag"])?;
 
@@ -810,6 +879,55 @@ mod tests {
     assert_eq!(
       options.bun_options,
       vec![OsString::from("--preload=./cjs.cjs"), OsString::from("--preload=./esm.mjs")],
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_skip_builtin_preloads() -> Result<(), crate::cli::CliError> {
+    let options = parse_cli(&["node", "--import", "node:fs", "--require", "fs", "-e", "0"])?;
+
+    assert_eq!(
+      options.exec_argv,
+      vec![
+        OsString::from("--import"),
+        OsString::from("node:fs"),
+        OsString::from("--require"),
+        OsString::from("fs"),
+        OsString::from("-e"),
+        OsString::from("0"),
+      ],
+    );
+    assert_eq!(options.bun_options, Vec::<OsString>::new());
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_translate_node_options_from_env_file() -> Result<(), crate::cli::CliError> {
+    let path = std::env::temp_dir().join(format!(
+      "bunode-node-options-{}-{}.env",
+      std::process::id(),
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos(),
+    ));
+    std::fs::write(&path, "NODE_OPTIONS=\"--conditions from-env\"\n")
+      .expect("test env file should be writable");
+    let path = path.to_string_lossy().to_string();
+
+    let options = parse_cli(&["node", "--env-file", &path, "--conditions", "cli", "-e", "0"])?;
+    std::fs::remove_file(&path).expect("test env file should be removable");
+
+    assert_eq!(
+      options.bun_options,
+      vec![
+        OsString::from("--conditions=from-env"),
+        super::join_option_value("--env-file", OsString::from(&path)),
+        OsString::from("--conditions=cli"),
+      ],
     );
 
     Ok(())

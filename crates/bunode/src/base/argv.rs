@@ -114,11 +114,14 @@ fn push_user_arguments(
   // Bun consumes this separator, preserving a user-supplied `--` as argv data.
   args.push(OsString::from("--"));
 
+  let mut previous_argument_was_delimiter = false;
+
   for argument in &invocation.script_arguments {
-    if escape_delimiters && argument == OsStr::new("--") {
+    if escape_delimiters && argument == OsStr::new("--") && !previous_argument_was_delimiter {
       args.push(OsString::from("--"));
     }
 
+    previous_argument_was_delimiter = argument == OsStr::new("--");
     args.push(argument.clone());
   }
 }
@@ -266,6 +269,33 @@ mod tests {
         OsString::from("process.argv"),
         OsString::from("--"),
         OsString::from("a"),
+        OsString::from("--"),
+        OsString::from("--"),
+        OsString::from("b"),
+      ],
+    );
+  }
+
+  #[test]
+  fn eval_mode_should_escape_consecutive_user_delimiters_once() {
+    let mut invocation = invocation(NodeCommand::Print(OsString::from("process.argv")));
+    invocation.script_arguments =
+      vec![OsString::from("--"), OsString::from("--"), OsString::from("b")];
+    let code = OsString::from("process.argv");
+    let args =
+      build_bun_args(&invocation, &BunMode::Print(code.as_os_str()), Path::new("/tmp/preload.js"));
+
+    assert_eq!(
+      args,
+      vec![
+        OsString::from("--no-install"),
+        OsString::from("--no-env-file"),
+        OsString::from("--preload=/tmp/preload.js"),
+        OsString::from("--conditions=node"),
+        OsString::from("-p"),
+        OsString::from("process.argv"),
+        OsString::from("--"),
+        OsString::from("--"),
         OsString::from("--"),
         OsString::from("--"),
         OsString::from("b"),

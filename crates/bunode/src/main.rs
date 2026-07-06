@@ -7,8 +7,11 @@ use std::{
   env,
   ffi::OsStr,
   fmt::Write as _,
+  fs,
   io::{self, IsTerminal, Read},
+  path::{Path, PathBuf},
   process::{ExitCode, ExitStatus},
+  time::{SystemTime, UNIX_EPOCH},
 };
 
 use base::argv::BunMode;
@@ -80,8 +83,29 @@ fn run_print_stdin(invocation: &cli::BunodeCommandOption) -> io::Result<ExitStat
     return run_bun(invocation, BunMode::Print(OsStr::new("undefined")));
   }
 
-  let code = std::ffi::OsString::from(code);
-  run_bun(invocation, BunMode::Print(code.as_os_str()))
+  let source_path = write_print_stdin_source(&code)?;
+  let expression = build_print_stdin_expression(&source_path);
+
+  run_bun(invocation, BunMode::Print(expression.as_os_str()))
+}
+
+fn write_print_stdin_source(code: &str) -> io::Result<PathBuf> {
+  let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+  let mut path = env::temp_dir();
+
+  path.push(format!("bunode-print-stdin-{}-{timestamp}.js", std::process::id()));
+  fs::write(&path, code)?;
+
+  Ok(path)
+}
+
+fn build_print_stdin_expression(path: &Path) -> std::ffi::OsString {
+  let path = escape_json_string(&path.to_string_lossy());
+
+  // Bun's `-p` requires argv code, so stdin source moves through a temp file to avoid argv limits.
+  std::ffi::OsString::from(format!(
+    "(async()=>{{const p=\"{path}\";try{{return globalThis.eval(await Bun.file(p).text())}}finally{{await import(\"node:fs/promises\").then(({{rm}})=>rm(p,{{force:true}}))}}}})()",
+  ))
 }
 
 fn run_bun(invocation: &cli::BunodeCommandOption, mode: BunMode<'_>) -> io::Result<ExitStatus> {

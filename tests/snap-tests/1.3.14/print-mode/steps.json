@@ -5,6 +5,7 @@
     "node -pe \"1 + 1\"",
     "node --print=ignored \"\\\"expr\\\"\"",
     "node -p \"JSON.stringify(process.argv.slice(1))\" a -- b",
+    "node -p \"JSON.stringify(process.argv.slice(1))\" -- -- --",
     "node -p \"JSON.stringify({ execArgv: process.execArgv, argv: process.argv.slice(1) })\" --conditions custom arg",
     "node -e \"\"",
     "node -p \"\"",

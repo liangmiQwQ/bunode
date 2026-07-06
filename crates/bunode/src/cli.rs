@@ -2,6 +2,19 @@
 
 use std::{ffi::OsString, fmt, process::ExitCode};
 
+use clap::Command;
+
+pub trait CliOptionSchema {
+  fn augment_command(command: Command) -> Command;
+}
+
+pub fn option_command<Schema>() -> Command
+where
+  Schema: CliOptionSchema,
+{
+  Schema::augment_command(Command::new("node").disable_help_flag(true).disable_version_flag(true))
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct BunodeCommandOption {
   pub argv0: OsString,
