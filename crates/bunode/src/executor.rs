@@ -214,7 +214,7 @@ fn build_print_stdin_expression(path: &Path) -> std::ffi::OsString {
 
   // Bun's `-p` requires argv code, so stdin source moves through a temp file to avoid argv limits.
   std::ffi::OsString::from(format!(
-    "try{{const __filename=\"[stdin]\",__dirname=\".\";eval(require(\"node:fs\").readFileSync(\"{path}\",\"utf8\"))}}finally{{require(\"node:fs\").rmSync(\"{path}\",{{force:true}})}}",
+    "{{const fs=require(\"node:fs\"),source=fs.readFileSync(\"{path}\",\"utf8\");fs.rmSync(\"{path}\",{{force:true}});const __filename=\"[stdin]\",__dirname=\".\";eval(source)}}",
   ))
 }
 

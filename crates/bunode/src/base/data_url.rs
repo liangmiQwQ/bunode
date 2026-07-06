@@ -87,6 +87,8 @@ fn decode_percent(value: &str) -> Result<Vec<u8>, CliError> {
 }
 
 fn decode_base64(value: &str) -> Result<Vec<u8>, CliError> {
+  validate_base64(value)?;
+
   let mut result = Vec::new();
   let mut buffer = 0u32;
   let mut bits = 0u8;
@@ -110,6 +112,35 @@ fn decode_base64(value: &str) -> Result<Vec<u8>, CliError> {
   }
 
   Ok(result)
+}
+
+fn validate_base64(value: &str) -> Result<(), CliError> {
+  let bytes = value.bytes().filter(|byte| !byte.is_ascii_whitespace()).collect::<Vec<_>>();
+  let padding_start = bytes.iter().position(|byte| *byte == b'=').unwrap_or(bytes.len());
+  let padding_count = bytes.len() - padding_start;
+  let data_len = padding_start;
+
+  if padding_count > 2 || bytes.iter().skip(padding_start).any(|byte| *byte != b'=') {
+    return Err(CliError::new("invalid base64 payload in data URL import"));
+  }
+
+  if data_len % 4 == 1 {
+    return Err(CliError::new("invalid base64 payload in data URL import"));
+  }
+
+  if padding_count > 0 {
+    let expected_padding = match data_len % 4 {
+      2 => 2,
+      3 => 1,
+      _ => return Err(CliError::new("invalid base64 payload in data URL import")),
+    };
+
+    if padding_count != expected_padding {
+      return Err(CliError::new("invalid base64 payload in data URL import"));
+    }
+  }
+
+  Ok(())
 }
 
 const fn base64_value(byte: u8) -> Option<u8> {
@@ -213,6 +244,12 @@ mod tests {
     assert_eq!(decoded, b"globalThis.loaded=1");
 
     Ok(())
+  }
+
+  #[test]
+  fn should_reject_invalid_base64_payload() {
+    assert!(decode_base64("Z").is_err());
+    assert!(decode_base64("Zg==bad").is_err());
   }
 
   #[test]
