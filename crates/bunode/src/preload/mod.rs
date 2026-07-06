@@ -59,8 +59,8 @@ fn prepare_in_directory(directory: &Path, preload_file_name: &str) -> io::Result
 }
 
 fn prepare_temporary(preload_file_name: &str) -> io::Result<PathBuf> {
-  // Some installations keep the Bun directory read-only, so fall back to a private temp copy.
-  write_private_preload_file(&env::temp_dir(), preload_file_name, ".js")
+  // Some installations keep the Bun directory read-only, so fall back to a shared stable copy.
+  prepare_in_directory(&env::temp_dir(), preload_file_name)
 }
 
 fn write_private_preload_file(directory: &Path, prefix: &str, suffix: &str) -> io::Result<PathBuf> {

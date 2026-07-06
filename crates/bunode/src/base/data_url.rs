@@ -42,6 +42,10 @@ fn is_javascript_metadata(metadata: &str) -> bool {
 
 fn decode_payload(metadata: &str, payload: &str) -> Result<Vec<u8>, CliError> {
   if metadata.split(';').any(|part| part.eq_ignore_ascii_case("base64")) {
+    let payload = decode_percent(payload)?;
+    let payload = std::str::from_utf8(&payload)
+      .map_err(|_| CliError::new("invalid base64 payload in data URL import"))?;
+
     return decode_base64(payload);
   }
 
@@ -173,6 +177,18 @@ mod tests {
     let decoded = decode_base64("Z2xvYmFsVGhpcy5sb2FkZWQ9MQ==")?;
 
     assert_eq!(decoded, b"globalThis.loaded=1");
+
+    Ok(())
+  }
+
+  #[test]
+  fn should_percent_decode_base64_data_payload() -> Result<(), crate::error::CliError> {
+    let path = materialize_javascript_module(
+      "data:text/javascript;base64,Z2xvYmFsVGhpcy5sb2FkZWQ9MQ%3D%3D",
+    )?
+    .unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
 
     Ok(())
   }

@@ -116,7 +116,7 @@ impl Executor {
 
   fn run_print_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
     if io::stdin().is_terminal() {
-      return Self::run_bun(invocation, BunMode::Print(OsStr::new("undefined")));
+      return Self::run_bun(invocation, BunMode::Repl);
     }
 
     let mut code = String::new();
