@@ -20,6 +20,8 @@ oxc_span = { workspace = true }
 
 [dependencies]
 clap = { workspace = true }
+semver = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

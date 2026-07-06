@@ -26,6 +26,8 @@ nursery = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 clap = "4.6.1"
+semver = "1.0.28"
+thiserror = "2.0.18"
 oxc_allocator = "0.138.0"
 oxc_codegen = "0.138.0"
 oxc_minifier = "0.138.0"

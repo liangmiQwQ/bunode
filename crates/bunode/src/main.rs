@@ -19,6 +19,7 @@ use base::argv::BunMode;
 mod base;
 mod bun;
 mod cli;
+mod error;
 mod preload;
 mod version;
 

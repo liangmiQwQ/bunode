@@ -2,17 +2,23 @@
 //! This module should only include `bun` binary finding, and command construction.
 //! Any wrapper logic (translate, argv generation) should be put outside of this module.
 
-use std::{env, io, path::PathBuf, process::Command};
+use std::{env, path::PathBuf, process::Command};
 
-pub fn command() -> io::Result<Command> {
-  Ok(Command::new(path()?))
+use crate::error::BunodeError;
+
+pub fn command() -> Result<Command, BunodeError> {
+  let bun_path = path()?;
+
+  if bun_path.exists() {
+    Ok(Command::new(bun_path))
+  } else {
+    Err(BunodeError::BunBinaryNotFoundWithPath(bun_path))
+  }
 }
 
-pub fn path() -> io::Result<PathBuf> {
+pub fn path() -> Result<PathBuf, BunodeError> {
   let executable = env::current_exe()?;
-  let executable_dir = executable.parent().ok_or_else(|| {
-    io::Error::new(io::ErrorKind::NotFound, "failed to resolve Bunode executable directory")
-  })?;
+  let executable_dir = executable.parent().ok_or_else(|| BunodeError::BunBinaryNotFound())?;
 
   #[cfg(windows)]
   let result = { executable_dir.join("bun").join("bun.exe") };
