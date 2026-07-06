@@ -9,10 +9,7 @@ use crate::error::CliError;
 
 use super::{
   builtins, data_url, env_file,
-  options::{
-    HelpSection, OptionAction, OptionShape, OptionSpec, PreloadKind, ValueMode, find_long_option,
-    find_short_option,
-  },
+  options::{HelpSection, OptionShape, OptionSpec, ValueMode, find_long_option, find_short_option},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,14 +74,18 @@ struct ParseState {
   print_mode: PrintMode,
   print_operand_mode: PrintOperandMode,
   operand_boundary: OperandBoundary,
+  env_file_node_options: Option<OsString>,
+  read_env_file_node_options: bool,
+  operands: Vec<OsString>,
+}
+
+#[derive(Default)]
+struct BunArgsBuilder {
   exec_argv: Vec<OsString>,
   bun_options: Vec<OsString>,
   bun_preloads: Vec<OsString>,
   common_js_preloads: Vec<OsString>,
   es_module_preloads: Vec<OsString>,
-  env_file_node_options: Option<OsString>,
-  read_env_file_node_options: bool,
-  operands: Vec<OsString>,
 }
 
 pub fn parse<I, T>(
@@ -121,23 +122,31 @@ fn parse_once(
   // 1. Keep argv0 for process.argv0 correction in the generated preload.
   let argv0 = args.first().cloned().unwrap_or_else(|| OsString::from("node"));
   let mut state = ParseState { read_env_file_node_options, ..ParseState::default() };
+  let mut builder = BunArgsBuilder::default();
 
   // 2. NODE_OPTIONS behaves as if it appears before CLI flags.
   if let Some(node_options) = node_options.filter(|value| !value.is_empty()) {
     let node_options = split_node_options(&node_options)?;
-    parse_tokens(&node_options, Source::NodeOptions, &mut state, shape)?;
+    parse_tokens(&node_options, Source::NodeOptions, &mut state, &mut builder, shape)?;
   }
 
   // 3. CLI operands stop option parsing once the script position is reached.
-  parse_tokens(args.get(1..).unwrap_or_default(), Source::CommandLine, &mut state, shape)?;
+  parse_tokens(
+    args.get(1..).unwrap_or_default(),
+    Source::CommandLine,
+    &mut state,
+    &mut builder,
+    shape,
+  )?;
 
-  state.finish(argv0)
+  state.finish(argv0, builder)
 }
 
 fn parse_tokens(
   tokens: &[OsString],
   source: Source,
   state: &mut ParseState,
+  builder: &mut BunArgsBuilder,
   shape: &OptionShape,
 ) -> Result<(), CliError> {
   let mut parser = lexopt::Parser::from_args(tokens.iter().cloned());
@@ -155,11 +164,11 @@ fn parse_tokens(
     match argument {
       Arg::Long(name) => {
         let name = name.to_owned();
-        parse_long_option(&name, &mut parser, source, state, shape)?;
+        parse_long_option(&name, &mut parser, source, state, builder, shape)?;
       }
-      Arg::Short(short) => parse_short_option(short, &mut parser, source, state, shape)?,
+      Arg::Short(short) => parse_short_option(short, &mut parser, source, state, builder, shape)?,
       Arg::Value(value) => {
-        if parse_operand(value, &mut parser, source, state)? {
+        if parse_operand(value, &mut parser, source, state, builder)? {
           break;
         }
       }
@@ -174,6 +183,7 @@ fn parse_long_option(
   parser: &mut lexopt::Parser,
   source: Source,
   state: &mut ParseState,
+  builder: &mut BunArgsBuilder,
   shape: &OptionShape,
 ) -> Result<(), CliError> {
   let name = format!("--{name}");
@@ -182,8 +192,7 @@ fn parse_long_option(
   };
   let (value, original) = parse_long_value(spec, parser, &name)?;
 
-  apply_option(spec, value, source, state)?;
-  record_exec_argv(spec, source, original, state);
+  apply_option(&name, spec, value, source, original, state, builder)?;
 
   Ok(())
 }
@@ -193,12 +202,13 @@ fn parse_short_option(
   parser: &mut lexopt::Parser,
   source: Source,
   state: &mut ParseState,
+  builder: &mut BunArgsBuilder,
   shape: &OptionShape,
 ) -> Result<(), CliError> {
   let attached_value = parser.optional_value();
 
   if short == 'p' && attached_value.as_ref().is_some_and(|value| value == OsStr::new("e")) {
-    return parse_print_eval_shortcut(parser, source, state, shape);
+    return parse_print_eval_shortcut(parser, source, state, builder, shape);
   }
 
   if let Some(attached_value) = attached_value {
@@ -210,7 +220,7 @@ fn parse_short_option(
   };
   let option_name = format!("-{short}");
 
-  let (value, original) = if matches!(spec.action, OptionAction::Print) {
+  let (value, original) = if short == 'p' {
     (None, vec![OsString::from(&option_name)])
   } else {
     match spec.value {
@@ -222,8 +232,7 @@ fn parse_short_option(
     }
   };
 
-  apply_option(spec, value, source, state)?;
-  record_exec_argv(spec, source, original, state);
+  apply_option(&option_name, spec, value, source, original, state, builder)?;
 
   Ok(())
 }
@@ -232,19 +241,23 @@ fn parse_print_eval_shortcut(
   parser: &mut lexopt::Parser,
   source: Source,
   state: &mut ParseState,
+  builder: &mut BunArgsBuilder,
   shape: &OptionShape,
 ) -> Result<(), CliError> {
   let print_spec = find_short_option(shape, 'p').ok_or_else(|| unsupported_option("-p"))?;
   let eval_spec = find_short_option(shape, 'e').ok_or_else(|| unsupported_option("-e"))?;
+  ensure_source_allowed(print_spec, source)?;
+  ensure_source_allowed(eval_spec, source)?;
   let value = required_next_value(parser, "-e")?;
   let original_value = value.clone();
 
-  apply_option(print_spec, None, source, state)?;
-  apply_option(eval_spec, Some(value), source, state)?;
+  state.print_mode = PrintMode::Enabled;
+  state.print_operand_mode = PrintOperandMode::Script;
+  state.inline_command = Some(NodeCommand::Eval(value));
 
   if source == Source::CommandLine {
-    state.exec_argv.push(OsString::from("-pe"));
-    state.exec_argv.push(original_value);
+    builder.exec_argv.push(OsString::from("-pe"));
+    builder.exec_argv.push(original_value);
   }
 
   Ok(())
@@ -279,6 +292,7 @@ fn parse_operand(
   parser: &mut lexopt::Parser,
   source: Source,
   state: &mut ParseState,
+  builder: &mut BunArgsBuilder,
 ) -> Result<bool, CliError> {
   if source == Source::NodeOptions {
     return Err(CliError::new(format!(
@@ -296,7 +310,7 @@ fn parse_operand(
   if state.should_capture_print_expression(source) {
     state.inline_command = Some(NodeCommand::Print(value.clone()));
     state.print_operand_mode = PrintOperandMode::Script;
-    state.exec_argv.push(value);
+    builder.exec_argv.push(value);
     return Ok(false);
   }
 
@@ -314,7 +328,7 @@ fn parse_long_value(
   let inline_value = parser.optional_value();
   let mut original = vec![format_long_original(option, inline_value.as_deref())];
 
-  if matches!(spec.action, OptionAction::Print) {
+  if option == "--print" {
     return Ok((inline_value, original));
   }
 
@@ -391,103 +405,189 @@ fn starts_with_dash(value: &OsStr) -> bool {
   value.to_string_lossy().starts_with('-')
 }
 
-fn record_exec_argv(
-  spec: &OptionSpec,
-  source: Source,
-  original: Vec<OsString>,
-  state: &mut ParseState,
-) {
-  if source == Source::CommandLine
-    && spec.help.is_some_and(|help| help.section == HelpSection::Node)
-  {
-    state.exec_argv.extend(original);
-  }
-}
-
 fn apply_option(
+  option: &str,
   spec: &OptionSpec,
   value: Option<OsString>,
   source: Source,
+  original: Vec<OsString>,
   state: &mut ParseState,
+  builder: &mut BunArgsBuilder,
 ) -> Result<(), CliError> {
-  if source == Source::NodeOptions && !spec.node_options_allowed {
-    let name = spec.long.first().copied().unwrap_or("option");
-    return Err(CliError::new(format!("`{name}` is not allowed in NODE_OPTIONS")));
-  }
+  ensure_source_allowed(spec, source)?;
 
-  if state.print_mode == PrintMode::Enabled && !matches!(spec.action, OptionAction::Print) {
+  if state.print_mode == PrintMode::Enabled && !matches!(option, "--print" | "-p") {
     state.print_operand_mode = PrintOperandMode::Script;
   }
 
-  match spec.action {
-    OptionAction::Help => {
+  if source == Source::CommandLine
+    && spec.help.is_some_and(|help| help.section == HelpSection::Node)
+  {
+    builder.exec_argv.extend(original);
+  }
+
+  match option {
+    "--help" | "-h" => {
       if state.command_mode != CommandMode::Version {
         state.command_mode = CommandMode::Help;
       }
     }
-    OptionAction::Version => state.command_mode = CommandMode::Version,
-    OptionAction::Eval => {
-      state.inline_command = Some(NodeCommand::Eval(required_action_value(value, spec)?));
+    "--version" | "-v" => state.command_mode = CommandMode::Version,
+    "--eval" | "-e" => {
+      state.inline_command = Some(NodeCommand::Eval(required_option_value(value, option)?));
     }
-    OptionAction::Print => {
+    "--print" | "-p" => {
       // Node accepts `--print=<value>` but still reads the expression from argv operands.
       state.print_mode = PrintMode::Enabled;
       state.print_operand_mode = PrintOperandMode::Expression;
     }
-    OptionAction::Preload(kind) => {
-      let value = required_action_value(value, spec)?;
-
-      if builtins::is_builtin_module(&value.to_string_lossy()) {
-        return Ok(());
-      }
-
-      match kind {
-        PreloadKind::CommonJs => {
-          state.common_js_preloads.push(join_option_value("--preload", value));
-        }
-        PreloadKind::EsModule => state.es_module_preloads.push(value),
-      }
+    "--require" | "-r" => push_common_js_preload(builder, required_option_value(value, option)?),
+    "--import" => push_es_module_preload(builder, required_option_value(value, option)?),
+    "--inspect" => push_optional_forward(builder, "--inspect", value, Some("127.0.0.1:9229")),
+    "--inspect-brk" => {
+      push_optional_forward(builder, "--inspect-brk", value, Some("127.0.0.1:9229"));
     }
-    OptionAction::ForwardFlag(name) => state.bun_options.push(OsString::from(name)),
-    OptionAction::ForwardValue(name) => {
-      let value = required_action_value(value, spec)?;
-
-      if name == "--env-file" {
-        validate_env_file(&value)?;
-
-        if source == Source::CommandLine
-          && state.read_env_file_node_options
-          && spec.help.is_some_and(|help| help.section == HelpSection::Node)
-          && let Some(node_options) = env_file::read_node_options(&value)?
-        {
-          state.env_file_node_options = Some(node_options);
-        }
-      }
-
-      if name == "--preload" {
-        state.bun_preloads.push(join_option_value(name, value));
-        return Ok(());
-      }
-
-      state.bun_options.push(join_option_value(name, value));
+    "--inspect-wait" => {
+      push_optional_forward(builder, "--inspect-wait", value, Some("127.0.0.1:9229"));
     }
-    OptionAction::ForwardOptionalValue(name) => {
-      let value = value.or_else(|| default_optional_value(name).map(OsString::from));
-
-      state
-        .bun_options
-        .push(value.map_or_else(|| OsString::from(name), |value| join_option_value(name, value)));
+    "--conditions" | "-C" => push_forward_value(builder, "--conditions", value, option)?,
+    "--cpu-prof" => push_forward_flag(builder, "--cpu-prof"),
+    "--cpu-prof-dir" => push_forward_value(builder, "--cpu-prof-dir", value, option)?,
+    "--cpu-prof-interval" => push_forward_value(builder, "--cpu-prof-interval", value, option)?,
+    "--cpu-prof-name" => push_forward_value(builder, "--cpu-prof-name", value, option)?,
+    "--heap-prof" => push_forward_flag(builder, "--heap-prof"),
+    "--heap-prof-dir" => push_forward_value(builder, "--heap-prof-dir", value, option)?,
+    "--heap-prof-name" => push_forward_value(builder, "--heap-prof-name", value, option)?,
+    "--dns-result-order" => push_forward_value(builder, "--dns-result-order", value, option)?,
+    "--env-file" => push_node_env_file(builder, state, value, option, source)?,
+    "--expose-gc" => push_forward_flag(builder, "--expose-gc"),
+    "--no-addons" => push_forward_flag(builder, "--no-addons"),
+    "--no-deprecation" => push_forward_flag(builder, "--no-deprecation"),
+    "--throw-deprecation" => push_forward_flag(builder, "--throw-deprecation"),
+    "--title" => push_forward_value(builder, "--title", value, option)?,
+    "--unhandled-rejections" => {
+      push_forward_value(builder, "--unhandled-rejections", value, option)?;
     }
+    "--use-bundled-ca" => push_forward_flag(builder, "--use-bundled-ca"),
+    "--use-openssl-ca" => push_forward_flag(builder, "--use-openssl-ca"),
+    "--use-system-ca" => push_forward_flag(builder, "--use-system-ca"),
+    "--zero-fill-buffers" => push_forward_flag(builder, "--zero-fill-buffers"),
+    "--bun-config" => push_forward_value(builder, "--config", value, option)?,
+    "--bun-console-depth" => push_forward_value(builder, "--console-depth", value, option)?,
+    "--bun-env-file" => push_bun_env_file(builder, value, option)?,
+    "--bun-fetch-preconnect" => push_forward_value(builder, "--fetch-preconnect", value, option)?,
+    "--bun-hot" => push_forward_flag(builder, "--hot"),
+    "--bun-install" => push_forward_value(builder, "--install", value, option)?,
+    "--bun-no-clear-screen" => push_forward_flag(builder, "--no-clear-screen"),
+    "--bun-no-env-file" => push_forward_flag(builder, "--no-env-file"),
+    "--bun-port" => push_forward_value(builder, "--port", value, option)?,
+    "--bun-prefer-latest" => push_forward_flag(builder, "--prefer-latest"),
+    "--bun-prefer-offline" => push_forward_flag(builder, "--prefer-offline"),
+    "--bun-preload" => push_bun_preload(builder, value, option)?,
+    "--bun-smol" => push_forward_flag(builder, "--smol"),
+    "--bun-user-agent" => push_forward_value(builder, "--user-agent", value, option)?,
+    "--bun-watch" => push_forward_flag(builder, "--watch"),
+    _ => return Err(unsupported_option(option)),
   }
 
   Ok(())
 }
 
-fn required_action_value(value: Option<OsString>, spec: &OptionSpec) -> Result<OsString, CliError> {
-  value.ok_or_else(|| {
+fn ensure_source_allowed(spec: &OptionSpec, source: Source) -> Result<(), CliError> {
+  if source == Source::NodeOptions && !spec.node_options_allowed {
     let name = spec.long.first().copied().unwrap_or("option");
-    CliError::new(format!("option `{name}` requires a value"))
-  })
+    return Err(CliError::new(format!("`{name}` is not allowed in NODE_OPTIONS")));
+  }
+
+  Ok(())
+}
+
+fn required_option_value(value: Option<OsString>, option: &str) -> Result<OsString, CliError> {
+  value.ok_or_else(|| CliError::new(format!("option `{option}` requires a value")))
+}
+
+fn push_common_js_preload(builder: &mut BunArgsBuilder, value: OsString) {
+  if !builtins::is_builtin_module(&value.to_string_lossy()) {
+    builder.common_js_preloads.push(join_option_value("--preload", value));
+  }
+}
+
+fn push_es_module_preload(builder: &mut BunArgsBuilder, value: OsString) {
+  if !builtins::is_builtin_module(&value.to_string_lossy()) {
+    builder.es_module_preloads.push(value);
+  }
+}
+
+fn push_forward_flag(builder: &mut BunArgsBuilder, name: &str) {
+  builder.bun_options.push(OsString::from(name));
+}
+
+fn push_forward_value(
+  builder: &mut BunArgsBuilder,
+  name: &str,
+  value: Option<OsString>,
+  option: &str,
+) -> Result<(), CliError> {
+  builder.bun_options.push(join_option_value(name, required_option_value(value, option)?));
+
+  Ok(())
+}
+
+fn push_optional_forward(
+  builder: &mut BunArgsBuilder,
+  name: &str,
+  value: Option<OsString>,
+  default: Option<&str>,
+) {
+  let value = value.or_else(|| default.map(OsString::from));
+
+  builder
+    .bun_options
+    .push(value.map_or_else(|| OsString::from(name), |value| join_option_value(name, value)));
+}
+
+fn push_node_env_file(
+  builder: &mut BunArgsBuilder,
+  state: &mut ParseState,
+  value: Option<OsString>,
+  option: &str,
+  source: Source,
+) -> Result<(), CliError> {
+  let value = required_option_value(value, option)?;
+  validate_env_file(&value)?;
+
+  if source == Source::CommandLine
+    && state.read_env_file_node_options
+    && let Some(node_options) = env_file::read_node_options(&value)?
+  {
+    state.env_file_node_options = Some(node_options);
+  }
+
+  builder.bun_options.push(join_option_value("--env-file", value));
+
+  Ok(())
+}
+
+fn push_bun_env_file(
+  builder: &mut BunArgsBuilder,
+  value: Option<OsString>,
+  option: &str,
+) -> Result<(), CliError> {
+  let value = required_option_value(value, option)?;
+  validate_env_file(&value)?;
+  builder.bun_options.push(join_option_value("--env-file", value));
+
+  Ok(())
+}
+
+fn push_bun_preload(
+  builder: &mut BunArgsBuilder,
+  value: Option<OsString>,
+  option: &str,
+) -> Result<(), CliError> {
+  builder.bun_preloads.push(join_option_value("--preload", required_option_value(value, option)?));
+
+  Ok(())
 }
 
 fn join_option_value(name: &str, value: OsString) -> OsString {
@@ -495,13 +595,6 @@ fn join_option_value(name: &str, value: OsString) -> OsString {
   option.push("=");
   option.push(value);
   option
-}
-
-fn default_optional_value(name: &str) -> Option<&'static str> {
-  match name {
-    "--inspect" | "--inspect-brk" | "--inspect-wait" => Some("127.0.0.1:9229"),
-    _ => None,
-  }
 }
 
 fn validate_env_file(path: &OsStr) -> Result<(), CliError> {
@@ -573,26 +666,30 @@ impl ParseState {
       && self.print_operand_mode == PrintOperandMode::Expression
   }
 
-  fn finish(mut self, argv0: OsString) -> Result<(ExecutionPlan, Option<OsString>), CliError> {
-    let (command, script_operand_count) = self.command()?;
+  fn finish(
+    self,
+    argv0: OsString,
+    mut builder: BunArgsBuilder,
+  ) -> Result<(ExecutionPlan, Option<OsString>), CliError> {
+    let (command, script_operand_count) = self.command(&mut builder)?;
     let script_arguments =
       self.operands.iter().skip(script_operand_count).cloned().collect::<Vec<_>>();
     let should_materialize_preloads = !matches!(command, NodeCommand::Help | NodeCommand::Version);
-    let mut bun_options = self.bun_options;
+    let mut bun_options = builder.bun_options;
     let env_file_node_options = self.env_file_node_options;
 
-    bun_options.extend(self.common_js_preloads);
+    bun_options.extend(builder.common_js_preloads);
     bun_options
-      .extend(resolve_es_module_preloads(self.es_module_preloads, should_materialize_preloads)?);
-    bun_options.extend(self.bun_preloads);
+      .extend(resolve_es_module_preloads(builder.es_module_preloads, should_materialize_preloads)?);
+    bun_options.extend(builder.bun_preloads);
 
     Ok((
-      ExecutionPlan { argv0, command, exec_argv: self.exec_argv, bun_options, script_arguments },
+      ExecutionPlan { argv0, command, exec_argv: builder.exec_argv, bun_options, script_arguments },
       env_file_node_options,
     ))
   }
 
-  fn command(&mut self) -> Result<(NodeCommand, usize), CliError> {
+  fn command(&self, builder: &mut BunArgsBuilder) -> Result<(NodeCommand, usize), CliError> {
     if self.command_mode == CommandMode::Help {
       return Ok((NodeCommand::Help, 0));
     }
@@ -628,7 +725,7 @@ impl ParseState {
         self.operands.first().cloned().unwrap_or_else(|| OsString::from("undefined"));
 
       if let Some(expression) = self.operands.first() {
-        self.exec_argv.push(expression.clone());
+        builder.exec_argv.push(expression.clone());
       }
 
       let command = if self.operands.is_empty() {
