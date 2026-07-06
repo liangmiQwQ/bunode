@@ -131,27 +131,7 @@ fn parse_once(
   // 3. CLI operands stop option parsing once the script position is reached.
   parse_tokens(args.get(1..).unwrap_or_default(), Source::CommandLine, &mut state, shape)?;
 
-  let parsed = state.finish()?;
-  let env_file_node_options = parsed.env_file_node_options;
-
-  Ok((
-    ExecutionPlan {
-      argv0,
-      command: parsed.command,
-      exec_argv: parsed.exec_argv,
-      bun_options: parsed.bun_options,
-      script_arguments: parsed.script_arguments,
-    },
-    env_file_node_options,
-  ))
-}
-
-struct ParsedState {
-  command: NodeCommand,
-  exec_argv: Vec<OsString>,
-  bun_options: Vec<OsString>,
-  env_file_node_options: Option<OsString>,
-  script_arguments: Vec<OsString>,
+  state.finish(argv0)
 }
 
 fn parse_tokens(
@@ -593,25 +573,23 @@ impl ParseState {
       && self.print_operand_mode == PrintOperandMode::Expression
   }
 
-  fn finish(mut self) -> Result<ParsedState, CliError> {
+  fn finish(mut self, argv0: OsString) -> Result<(ExecutionPlan, Option<OsString>), CliError> {
     let (command, script_operand_count) = self.command()?;
     let script_arguments =
       self.operands.iter().skip(script_operand_count).cloned().collect::<Vec<_>>();
     let should_materialize_preloads = !matches!(command, NodeCommand::Help | NodeCommand::Version);
     let mut bun_options = self.bun_options;
+    let env_file_node_options = self.env_file_node_options;
 
     bun_options.extend(self.common_js_preloads);
     bun_options
       .extend(resolve_es_module_preloads(self.es_module_preloads, should_materialize_preloads)?);
     bun_options.extend(self.bun_preloads);
 
-    Ok(ParsedState {
-      command,
-      exec_argv: self.exec_argv,
-      bun_options,
-      env_file_node_options: self.env_file_node_options,
-      script_arguments,
-    })
+    Ok((
+      ExecutionPlan { argv0, command, exec_argv: self.exec_argv, bun_options, script_arguments },
+      env_file_node_options,
+    ))
   }
 
   fn command(&mut self) -> Result<(NodeCommand, usize), CliError> {
