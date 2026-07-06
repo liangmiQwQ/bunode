@@ -3,6 +3,7 @@ undefined
 {"execArgv":["-p"],"argv":["-","arg"]}
 function
 {"file":"[stdin]","dir":"."}
+3
 42
 2
 expr

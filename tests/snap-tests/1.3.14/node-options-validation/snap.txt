@@ -6,3 +6,6 @@ double-dash=9
 bunode: `--` is not allowed in NODE_OPTIONS
 operand=9
 bunode: `script.js` is not allowed in NODE_OPTIONS
+data-version=0:true
+real-env-file=ok
+real-env-file=0

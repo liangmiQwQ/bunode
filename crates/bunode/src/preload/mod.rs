@@ -14,7 +14,6 @@ use crate::{bun, error::BunodeError};
 pub const EXEC_PATH_ENV: &str = "BUNODE_EXEC_PATH";
 pub const ARGV0_ENV: &str = "BUNODE_ARGV0";
 pub const EXEC_ARGV_ENV: &str = "BUNODE_EXEC_ARGV";
-pub const DROP_STDIN_ARGV_ENV: &str = "BUNODE_DROP_STDIN_ARGV";
 
 const PRELOAD_SOURCE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/preload.min.js"));
 

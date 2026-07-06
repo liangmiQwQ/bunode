@@ -1,12 +1,10 @@
 const execPath = process.env.BUNODE_EXEC_PATH
 const argv0 = process.env.BUNODE_ARGV0 ?? execPath
 const execArgv = process.env.BUNODE_EXEC_ARGV
-const dropStdinArgv = process.env.BUNODE_DROP_STDIN_ARGV === '1'
 
 delete process.env.BUNODE_EXEC_PATH
 delete process.env.BUNODE_ARGV0
 delete process.env.BUNODE_EXEC_ARGV
-delete process.env.BUNODE_DROP_STDIN_ARGV
 
 if (execPath) {
   Object.defineProperty(process, 'execPath', {
@@ -34,8 +32,4 @@ if (execArgv) {
     enumerable: true,
     configurable: true
   })
-}
-
-if (dropStdinArgv && process.argv[1] === '-') {
-  process.argv.splice(1, 1)
 }

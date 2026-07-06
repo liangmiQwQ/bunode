@@ -4,11 +4,8 @@ use std::{
   env,
   ffi::{OsStr, OsString},
   fmt::Write as _,
-  fs::OpenOptions,
-  io::{self, IsTerminal, Read, Write},
-  path::{Path, PathBuf},
-  process::{self, Command, ExitCode, ExitStatus, Stdio},
-  time::{SystemTime, UNIX_EPOCH},
+  io::{self, IsTerminal},
+  process::{Command, ExitCode, ExitStatus},
 };
 
 use crate::{
@@ -86,32 +83,16 @@ impl Executor {
   }
 
   fn run_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
-    let mut code = Vec::new();
-    io::stdin().read_to_end(&mut code)?;
+    let code = build_stdin_eval_expression();
 
-    if code.is_empty() {
-      return Self::run_empty_stdin(invocation);
-    }
-
-    Self::run_bun_with_stdin(invocation, BunMode::Stdin, &code)
+    Self::run_bun(invocation, BunMode::Eval(code.as_os_str()))
   }
 
   fn run_script_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
-    let mut code = Vec::new();
-    io::stdin().read_to_end(&mut code)?;
+    let invocation = invocation_with_script_argument(invocation, OsString::from("-"));
+    let code = build_stdin_eval_expression();
 
-    if code.is_empty() {
-      let invocation = invocation_with_script_argument(invocation, OsString::from("-"));
-
-      return Self::run_empty_stdin(&invocation);
-    }
-
-    Self::run_bun_with_stdin(invocation, BunMode::Script(OsStr::new("-")), &code)
-  }
-
-  fn run_empty_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
-    // Bun reports an empty `run -` as a missing module, while Node still runs setup hooks.
-    Self::run_bun(invocation, BunMode::Eval(OsStr::new("")))
+    Self::run_bun(&invocation, BunMode::Eval(code.as_os_str()))
   }
 
   fn run_print_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
@@ -119,15 +100,7 @@ impl Executor {
       return Self::run_bun(invocation, BunMode::Repl);
     }
 
-    let mut code = Vec::new();
-    io::stdin().read_to_end(&mut code)?;
-
-    if code.is_empty() {
-      return Self::run_bun(invocation, BunMode::Print(OsStr::new("undefined")));
-    }
-
-    let source_path = write_print_stdin_source(&code)?;
-    let expression = build_print_stdin_expression(&source_path);
+    let expression = build_stdin_eval_expression();
 
     Self::run_bun(invocation, BunMode::Print(expression.as_os_str()))
   }
@@ -139,34 +112,6 @@ impl Executor {
     let command = Self::configure_bun(invocation, mode)?;
 
     Ok(ExecutionResult::Status(run_configured_bun(command)?))
-  }
-
-  fn run_bun_with_stdin(
-    invocation: &ExecutionPlan,
-    mode: BunMode<'_>,
-    stdin: &[u8],
-  ) -> Result<ExecutionResult, BunodeError> {
-    let mut command = Self::configure_bun(invocation, mode)?;
-    command.stdin(Stdio::piped());
-
-    // Direct stdin has already been read so the child gets the original program through a pipe.
-    let mut child = command.spawn()?;
-    let mut child_stdin = child
-      .stdin
-      .take()
-      .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Bun stdin was not piped"))?;
-
-    let write_result = child_stdin.write_all(stdin);
-    drop(child_stdin);
-    let status = child.wait()?;
-
-    if let Err(error) = write_result
-      && error.kind() != io::ErrorKind::BrokenPipe
-    {
-      return Err(error.into());
-    }
-
-    Ok(ExecutionResult::Status(status))
   }
 
   fn configure_bun(invocation: &ExecutionPlan, mode: BunMode<'_>) -> Result<Command, BunodeError> {
@@ -182,10 +127,6 @@ impl Executor {
       command.env(preload::ARGV0_ENV, &invocation.argv0);
       command.env(preload::EXEC_ARGV_ENV, encode_exec_argv_json(&invocation.exec_argv));
 
-      if matches!(mode, BunMode::Stdin) {
-        command.env(preload::DROP_STDIN_ARGV_ENV, "1");
-      }
-
       args
     };
 
@@ -193,10 +134,6 @@ impl Executor {
 
     Ok(command)
   }
-}
-
-fn write_print_stdin_source(code: &[u8]) -> Result<PathBuf, BunodeError> {
-  write_private_temp_file("bunode-print-stdin", ".js", code)
 }
 
 fn invocation_with_script_argument(
@@ -209,50 +146,10 @@ fn invocation_with_script_argument(
   invocation
 }
 
-fn build_print_stdin_expression(path: &Path) -> std::ffi::OsString {
-  let path = escape_json_string(&path.to_string_lossy());
-
-  // Bun's `-p` requires argv code, so stdin source moves through a temp file to avoid argv limits.
-  std::ffi::OsString::from(format!(
-    "{{const fs=require(\"node:fs\"),source=fs.readFileSync(\"{path}\",\"utf8\");fs.rmSync(\"{path}\",{{force:true}});const __filename=\"[stdin]\",__dirname=\".\";eval(source)}}",
-  ))
-}
-
-fn write_private_temp_file(
-  prefix: &str,
-  suffix: &str,
-  content: &[u8],
-) -> Result<PathBuf, BunodeError> {
-  let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
-
-  for attempt in 0..32 {
-    let mut path = env::temp_dir();
-    path.push(format!("{prefix}-{}-{timestamp}-{attempt}{suffix}", process::id()));
-
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-
-    #[cfg(unix)]
-    {
-      use std::os::unix::fs::OpenOptionsExt;
-
-      options.mode(0o600);
-    }
-
-    match options.open(&path) {
-      Ok(mut file) => {
-        // Stdin source can contain user code, so keep the temporary copy private.
-        file.write_all(content)?;
-        return Ok(path);
-      }
-      Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-      Err(error) => return Err(error.into()),
-    }
-  }
-
-  Err(
-    io::Error::new(io::ErrorKind::AlreadyExists, "failed to create a private Bunode temp file")
-      .into(),
+fn build_stdin_eval_expression() -> std::ffi::OsString {
+  // Read fd 0 inside Bun so preloads can exit before an unbounded pipe is drained.
+  std::ffi::OsString::from(
+    "(()=>{const __bunodeFs=require(\"node:fs\");Object.assign(globalThis,{__filename:\"[stdin]\",__dirname:\".\",require,module,exports});return globalThis.eval(__bunodeFs.readFileSync(0,\"utf8\"))})()",
   )
 }
 

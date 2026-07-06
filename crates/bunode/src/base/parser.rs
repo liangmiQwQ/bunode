@@ -83,6 +83,7 @@ struct ParseState {
   common_js_preloads: Vec<OsString>,
   es_module_preloads: Vec<OsString>,
   env_file_node_options: Option<OsString>,
+  read_env_file_node_options: bool,
   operands: Vec<OsString>,
 }
 
@@ -98,26 +99,28 @@ where
   let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
 
   if node_options.is_none() {
-    let (invocation, env_file_node_options) = parse_once(&args, None, shape)?;
+    let (invocation, env_file_node_options) = parse_once(&args, None, shape, true)?;
 
     if env_file_node_options.as_ref().is_some_and(|value| !value.is_empty()) {
-      return parse_once(&args, env_file_node_options, shape).map(|(invocation, _)| invocation);
+      return parse_once(&args, env_file_node_options, shape, false)
+        .map(|(invocation, _)| invocation);
     }
 
     return Ok(invocation);
   }
 
-  parse_once(&args, node_options, shape).map(|(invocation, _)| invocation)
+  parse_once(&args, node_options, shape, false).map(|(invocation, _)| invocation)
 }
 
 fn parse_once(
   args: &[OsString],
   node_options: Option<OsString>,
   shape: &OptionShape,
+  read_env_file_node_options: bool,
 ) -> Result<(ExecutionPlan, Option<OsString>), CliError> {
   // 1. Keep argv0 for process.argv0 correction in the generated preload.
   let argv0 = args.first().cloned().unwrap_or_else(|| OsString::from("node"));
-  let mut state = ParseState::default();
+  let mut state = ParseState { read_env_file_node_options, ..ParseState::default() };
 
   // 2. NODE_OPTIONS behaves as if it appears before CLI flags.
   if let Some(node_options) = node_options.filter(|value| !value.is_empty()) {
@@ -458,18 +461,10 @@ fn apply_option(
         return Ok(());
       }
 
-      if matches!(kind, PreloadKind::EsModule)
-        && let Some(path) = data_url::materialize_javascript_module(&value.to_string_lossy())?
-      {
-        let value = join_option_value("--preload", path.into_os_string());
-        state.es_module_preloads.push(value);
-        return Ok(());
-      }
-
-      let value = join_option_value("--preload", value);
-
       match kind {
-        PreloadKind::CommonJs => state.common_js_preloads.push(value),
+        PreloadKind::CommonJs => {
+          state.common_js_preloads.push(join_option_value("--preload", value));
+        }
         PreloadKind::EsModule => state.es_module_preloads.push(value),
       }
     }
@@ -481,6 +476,7 @@ fn apply_option(
         validate_env_file(&value)?;
 
         if source == Source::CommandLine
+          && state.read_env_file_node_options
           && spec.help.is_some_and(|help| help.section == HelpSection::Node)
           && let Some(node_options) = env_file::read_node_options(&value)?
         {
@@ -601,9 +597,12 @@ impl ParseState {
     let (command, script_operand_count) = self.command()?;
     let script_arguments =
       self.operands.iter().skip(script_operand_count).cloned().collect::<Vec<_>>();
+    let should_materialize_preloads = !matches!(command, NodeCommand::Help | NodeCommand::Version);
     let mut bun_options = self.bun_options;
+
     bun_options.extend(self.common_js_preloads);
-    bun_options.extend(self.es_module_preloads);
+    bun_options
+      .extend(resolve_es_module_preloads(self.es_module_preloads, should_materialize_preloads)?);
     bun_options.extend(self.bun_preloads);
 
     Ok(ParsedState {
@@ -680,6 +679,26 @@ impl ParseState {
 
     Ok((NodeCommand::Script(script.clone()), 1))
   }
+}
+
+fn resolve_es_module_preloads(
+  values: Vec<OsString>,
+  should_materialize: bool,
+) -> Result<Vec<OsString>, CliError> {
+  let mut preloads = Vec::with_capacity(values.len());
+
+  for value in values {
+    if should_materialize
+      && let Some(path) = data_url::materialize_javascript_module(&value.to_string_lossy())?
+    {
+      preloads.push(join_option_value("--preload", path.into_os_string()));
+      continue;
+    }
+
+    preloads.push(join_option_value("--preload", value));
+  }
+
+  Ok(preloads)
 }
 
 #[cfg(test)]
@@ -1078,6 +1097,18 @@ mod tests {
   }
 
   #[test]
+  fn parse_should_defer_data_url_import_errors_for_version() -> Result<(), crate::error::CliError> {
+    let options = parse_with_node_options(
+      &["node", "--import", "data:text/javascript,%GG", "--version"],
+      "--import data:text/javascript,%GG",
+    )?;
+
+    assert_eq!(options.command, NodeCommand::Version);
+
+    Ok(())
+  }
+
+  #[test]
   fn parse_should_skip_builtin_preloads() -> Result<(), crate::error::CliError> {
     let options = parse_cli(&["node", "--import", "node:fs", "--require", "fs", "-e", "0"])?;
 
@@ -1143,6 +1174,32 @@ mod tests {
     std::fs::remove_file(&path).expect("test env file should be removable");
 
     assert_eq!(options.bun_options, vec![super::join_option_value("--env-file", path.into())]);
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_not_read_env_file_node_options_when_real_node_options_exists()
+  -> Result<(), crate::error::CliError> {
+    let path = std::env::temp_dir().join(format!(
+      "bunode-real-node-options-{}-{}.env",
+      std::process::id(),
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos(),
+    ));
+    std::fs::write(&path, "NODE_OPTIONS=\"--bad\n").expect("test env file should be writable");
+    let path = path.to_string_lossy().to_string();
+
+    let options =
+      parse_with_node_options(&["node", "--env-file", &path, "-e", "0"], "--conditions x")?;
+    std::fs::remove_file(&path).expect("test env file should be removable");
+
+    assert_eq!(
+      options.bun_options,
+      vec![OsString::from("--conditions=x"), super::join_option_value("--env-file", path.into()),],
+    );
 
     Ok(())
   }

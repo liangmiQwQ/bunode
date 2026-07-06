@@ -12,7 +12,6 @@ pub enum BunMode<'a> {
   Eval(&'a OsStr),
   Print(&'a OsStr),
   Script(&'a OsStr),
-  Stdin,
   Repl,
 }
 
@@ -55,13 +54,6 @@ pub fn build_bun_args(
       push_runtime_flags(&mut args, preload_path);
       args.extend(invocation.bun_options.iter().cloned());
       args.push(normalize_script_name(script));
-      push_user_arguments(&mut args, invocation, false);
-    }
-    BunMode::Stdin => {
-      args.push(OsString::from("run"));
-      push_runtime_flags(&mut args, preload_path);
-      args.extend(invocation.bun_options.iter().cloned());
-      args.push(OsString::from("-"));
       push_user_arguments(&mut args, invocation, false);
     }
     BunMode::Repl => {

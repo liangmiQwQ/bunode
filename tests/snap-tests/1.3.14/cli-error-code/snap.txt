@@ -1,3 +1,4 @@
 --eval=9
 --inspect==9
 stdin-preload-exit=42
+stdin-preload-open=42

@@ -1,11 +1,13 @@
 import { spawnSync } from 'node:child_process'
 
 const source = `
+var stdinGlobal = 1
 const normalized = process.execPath.replaceAll('\\\\', '/')
 console.log(\`argvLength=\${process.argv.length}\`)
 console.log(\`hasDashArgv=\${process.argv.includes('-')}\`)
 console.log(\`execPath=\${normalized.endsWith('/.dev/bin/node') || normalized.endsWith('/.dev/node.exe')}\`)
 console.log(\`argvTail=\${process.argv.slice(1).map(value => value === '' ? '<empty>' : value).join('|')}\`)
+console.log(\`globalVar=\${globalThis.stdinGlobal}\`)
 `
 
 const result = spawnSync(process.execPath, {
