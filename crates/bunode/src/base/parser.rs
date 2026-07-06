@@ -673,6 +673,11 @@ impl ParseState {
       ));
     }
 
+    // Node treats an empty script operand like stdin/REPL while preserving it in process.argv.
+    if script.is_empty() {
+      return Ok((NodeCommand::Direct, 0));
+    }
+
     Ok((NodeCommand::Script(script.clone()), 1))
   }
 }
@@ -752,6 +757,25 @@ mod tests {
         exec_argv: Vec::new(),
         bun_options: Vec::new(),
         script_arguments: vec![OsString::from("--help")],
+      },
+    );
+
+    Ok(())
+  }
+
+  #[test]
+  fn parse_should_treat_empty_script_operand_as_stdin_argument()
+  -> Result<(), crate::error::CliError> {
+    let options = parse_cli(&["node", "--", "", "arg"])?;
+
+    assert_eq!(
+      options,
+      ExecutionPlan {
+        argv0: OsString::from("node"),
+        command: NodeCommand::Direct,
+        exec_argv: Vec::new(),
+        bun_options: Vec::new(),
+        script_arguments: vec![OsString::new(), OsString::from("arg")],
       },
     );
 

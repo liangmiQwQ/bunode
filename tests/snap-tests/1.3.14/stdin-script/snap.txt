@@ -1,3 +1,8 @@
 argvLength=1
 hasDashArgv=false
 execPath=true
+argvTail=
+argvLength=3
+hasDashArgv=false
+execPath=true
+argvTail=<empty>|arg
