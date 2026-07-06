@@ -2,7 +2,26 @@ use std::{io, path::PathBuf, process::ExitCode};
 
 use thiserror::Error;
 
-use crate::cli::CliError;
+#[derive(Error, Debug, PartialEq, Eq)]
+#[error("bunode: {message}")]
+pub struct CliError {
+  message: String,
+  exit_code: u8,
+}
+
+impl CliError {
+  pub fn new(message: impl Into<String>) -> Self {
+    Self { message: message.into(), exit_code: 9 }
+  }
+
+  pub fn failure(message: impl Into<String>) -> Self {
+    Self { message: message.into(), exit_code: 1 }
+  }
+
+  pub fn exit_code(&self) -> ExitCode {
+    ExitCode::from(self.exit_code)
+  }
+}
 
 #[derive(Error, Debug)]
 pub enum BunodeError {

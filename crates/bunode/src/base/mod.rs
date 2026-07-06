@@ -10,4 +10,4 @@ mod options;
 mod parser;
 
 pub use options::{OptionShape, option_shape_for_bun};
-pub use parser::parse;
+pub use parser::{ExecutionPlan, NodeCommand, parse};

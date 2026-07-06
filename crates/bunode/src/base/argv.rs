@@ -5,7 +5,7 @@ use std::{
   path::Path,
 };
 
-use crate::cli::{BunodeCommandOption, CliError};
+use crate::{base::ExecutionPlan, error::CliError};
 
 #[derive(Clone, Copy)]
 pub enum BunMode<'a> {
@@ -29,7 +29,7 @@ pub fn validate_script(script: &OsStr) -> Result<(), CliError> {
 }
 
 pub fn build_bun_args(
-  invocation: &BunodeCommandOption,
+  invocation: &ExecutionPlan,
   mode: &BunMode<'_>,
   preload_path: &Path,
 ) -> Vec<OsString> {
@@ -72,7 +72,7 @@ pub fn build_bun_args(
   args
 }
 
-pub fn build_repl_args(invocation: &BunodeCommandOption) -> Vec<OsString> {
+pub fn build_repl_args(invocation: &ExecutionPlan) -> Vec<OsString> {
   let mut args = invocation.bun_options.clone();
 
   args.push(OsString::from("repl"));
@@ -104,7 +104,7 @@ fn normalize_print_code(code: &OsStr) -> OsString {
 
 fn push_user_arguments(
   args: &mut Vec<OsString>,
-  invocation: &BunodeCommandOption,
+  invocation: &ExecutionPlan,
   escape_delimiters: bool,
 ) {
   if invocation.script_arguments.is_empty() {
@@ -168,11 +168,11 @@ mod tests {
 
   use crate::{
     base::argv::{BunMode, build_bun_args, build_repl_args, validate_script},
-    cli::{BunodeCommandOption, NodeCommand},
+    base::{ExecutionPlan, NodeCommand},
   };
 
-  fn invocation(command: NodeCommand) -> BunodeCommandOption {
-    BunodeCommandOption {
+  fn invocation(command: NodeCommand) -> ExecutionPlan {
+    ExecutionPlan {
       argv0: OsString::from("node"),
       command,
       exec_argv: Vec::new(),

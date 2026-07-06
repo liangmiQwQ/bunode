@@ -2,7 +2,7 @@
 
 use std::{ffi::OsString, fs, path::Path};
 
-use crate::cli::CliError;
+use crate::error::CliError;
 
 pub(super) fn read_node_options(path: &std::ffi::OsStr) -> Result<Option<OsString>, CliError> {
   let path = Path::new(path);

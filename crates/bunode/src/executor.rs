@@ -12,9 +12,8 @@ use std::{
 };
 
 use crate::{
-  base::{self, OptionShape, argv::BunMode},
+  base::{self, ExecutionPlan, NodeCommand, OptionShape, argv::BunMode},
   bun,
-  cli::{self, BunodeCommandOption},
   error::BunodeError,
   preload, version,
 };
@@ -48,7 +47,7 @@ impl Executor {
     Self { versions, shape }
   }
 
-  fn parse<I, T>(&self, args: I) -> Result<BunodeCommandOption, BunodeError>
+  fn parse<I, T>(&self, args: I) -> Result<ExecutionPlan, BunodeError>
   where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString>,
@@ -56,24 +55,24 @@ impl Executor {
     Ok(base::parse(args, env::var_os("NODE_OPTIONS"), &self.shape)?)
   }
 
-  fn run(&self, invocation: &BunodeCommandOption) -> Result<ExecutionResult, BunodeError> {
+  fn run(&self, invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
     match &invocation.command {
-      cli::NodeCommand::Help => {
+      NodeCommand::Help => {
         base::help::print(&self.shape);
         Ok(ExecutionResult::ExitCode(ExitCode::SUCCESS))
       }
-      cli::NodeCommand::Version => {
+      NodeCommand::Version => {
         println!("{}", self.versions.bunode_version_text());
         Ok(ExecutionResult::ExitCode(ExitCode::SUCCESS))
       }
-      cli::NodeCommand::Eval(code) => Self::run_bun(invocation, BunMode::Eval(code)),
-      cli::NodeCommand::Print(code) => Self::run_bun(invocation, BunMode::Print(code)),
-      cli::NodeCommand::PrintStdin => Self::run_print_stdin(invocation),
-      cli::NodeCommand::Script(script) => {
+      NodeCommand::Eval(code) => Self::run_bun(invocation, BunMode::Eval(code)),
+      NodeCommand::Print(code) => Self::run_bun(invocation, BunMode::Print(code)),
+      NodeCommand::PrintStdin => Self::run_print_stdin(invocation),
+      NodeCommand::Script(script) => {
         base::argv::validate_script(script)?;
         Self::run_bun(invocation, BunMode::Script(script))
       }
-      cli::NodeCommand::Direct => {
+      NodeCommand::Direct => {
         if io::stdin().is_terminal() {
           Self::run_bun(invocation, BunMode::Repl)
         } else {
@@ -83,7 +82,7 @@ impl Executor {
     }
   }
 
-  fn run_print_stdin(invocation: &BunodeCommandOption) -> Result<ExecutionResult, BunodeError> {
+  fn run_print_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
     if io::stdin().is_terminal() {
       return Self::run_bun(invocation, BunMode::Print(OsStr::new("undefined")));
     }
@@ -102,7 +101,7 @@ impl Executor {
   }
 
   fn run_bun(
-    invocation: &BunodeCommandOption,
+    invocation: &ExecutionPlan,
     mode: BunMode<'_>,
   ) -> Result<ExecutionResult, BunodeError> {
     let mut command = bun::command()?;

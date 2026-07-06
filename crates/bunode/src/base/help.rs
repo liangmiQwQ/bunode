@@ -9,9 +9,6 @@ const NODE_SPECIAL_ROWS: &[(&str, &str)] = &[
 ];
 
 pub fn print(shape: &OptionShape) {
-  // Keep the custom help text tied to the same Clap schema future parsers can reuse.
-  super::options::clap_command_for(shape).debug_assert();
-
   println!("Usage: node [options] [ script.js ] [arguments]");
   println!();
   println!("Options:");

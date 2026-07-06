@@ -10,7 +10,6 @@ use std::{
 
 mod base;
 mod bun;
-mod cli;
 mod error;
 mod executor;
 mod preload;

@@ -5,7 +5,7 @@ use std::{
   path::{Path, PathBuf},
 };
 
-use crate::cli::CliError;
+use crate::error::CliError;
 
 pub(super) fn materialize_javascript_module(specifier: &str) -> Result<Option<PathBuf>, CliError> {
   let Some(rest) = specifier.strip_prefix("data:") else {
@@ -149,7 +149,7 @@ mod tests {
   use super::{decode_base64, decode_percent, materialize_javascript_module};
 
   #[test]
-  fn should_decode_percent_data_payload() -> Result<(), crate::cli::CliError> {
+  fn should_decode_percent_data_payload() -> Result<(), crate::error::CliError> {
     let decoded = decode_percent("globalThis.loaded%3D1")?;
 
     assert_eq!(decoded, b"globalThis.loaded=1");
@@ -158,7 +158,7 @@ mod tests {
   }
 
   #[test]
-  fn should_decode_base64_data_payload() -> Result<(), crate::cli::CliError> {
+  fn should_decode_base64_data_payload() -> Result<(), crate::error::CliError> {
     let decoded = decode_base64("Z2xvYmFsVGhpcy5sb2FkZWQ9MQ==")?;
 
     assert_eq!(decoded, b"globalThis.loaded=1");
@@ -167,7 +167,7 @@ mod tests {
   }
 
   #[test]
-  fn should_materialize_javascript_data_import() -> Result<(), crate::cli::CliError> {
+  fn should_materialize_javascript_data_import() -> Result<(), crate::error::CliError> {
     let path =
       materialize_javascript_module("data:text/javascript,globalThis.loaded%3D1")?.unwrap();
 
@@ -177,7 +177,7 @@ mod tests {
   }
 
   #[test]
-  fn should_ignore_non_data_imports() -> Result<(), crate::cli::CliError> {
+  fn should_ignore_non_data_imports() -> Result<(), crate::error::CliError> {
     assert!(materialize_javascript_module("./preload.mjs")?.is_none());
 
     Ok(())
