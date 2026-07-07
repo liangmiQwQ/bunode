@@ -99,7 +99,7 @@ pub(super) const OPTION_SPECS: &[OptionSpec] = &[
     ["--require"],
     Some('r'),
     ValueMode::Required,
-    "preload CommonJS module (translated to Bun preload)",
+    "preload CommonJS module",
     "...",
   ),
   option_spec!(

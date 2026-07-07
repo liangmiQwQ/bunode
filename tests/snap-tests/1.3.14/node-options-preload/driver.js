@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process'
 
-const result = spawnSync(process.execPath, ['-p', 'globalThis.fromNodeOptionsValue'], {
+const expression = '`${globalThis.fromNodeOptionsValue}:${globalThis.fromNodeOptionsArgv0Patched}`'
+
+const result = spawnSync(process.execPath, ['-p', expression], {
   encoding: 'utf8',
   env: {
     ...process.env,
@@ -20,7 +22,7 @@ delete envFileEnv.NODE_OPTIONS
 
 const envFileResult = spawnSync(
   process.execPath,
-  ['--env-file', 'node-options.env', '-p', 'globalThis.fromNodeOptionsValue'],
+  ['--env-file', 'node-options.env', '-p', expression],
   {
     encoding: 'utf8',
     env: envFileEnv

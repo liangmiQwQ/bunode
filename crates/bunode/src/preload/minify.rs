@@ -6,7 +6,7 @@ use oxc_span::SourceType;
 
 pub fn minify(source: &str) -> Result<String, String> {
   let allocator = Allocator::default();
-  let source_type = SourceType::mjs();
+  let source_type = SourceType::cjs();
   let parsed = Parser::new(&allocator, source, source_type).parse();
 
   if !parsed.diagnostics.is_empty() {

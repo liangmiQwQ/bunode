@@ -157,6 +157,7 @@ mod tests {
       command,
       exec_argv: Vec::new(),
       bun_options: vec![OsString::from("--conditions=node")],
+      common_js_preloads: Vec::new(),
       script_arguments: vec![OsString::from("--flag")],
     }
   }

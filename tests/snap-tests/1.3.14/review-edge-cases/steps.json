@@ -1,4 +1,6 @@
 {
   "commands": ["node driver.js"],
-  "after": ["rm -rf mixed.env multi.env multi-preload.cjs node_modules"]
+  "after": [
+    "rm -rf mixed.env multi.env multi-preload.cjs node_modules same-preload-a.cjs same-preload-b.cjs"
+  ]
 }

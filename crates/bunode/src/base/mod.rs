@@ -4,7 +4,6 @@ pub mod argv;
 pub mod help;
 
 mod builtins;
-mod common_js_preload;
 mod data_url;
 mod env_file;
 mod options;

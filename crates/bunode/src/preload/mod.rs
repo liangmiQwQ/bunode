@@ -14,18 +14,20 @@ use crate::{bun, error::BunodeError};
 pub const EXEC_PATH_ENV: &str = "BUNODE_EXEC_PATH";
 pub const ARGV0_ENV: &str = "BUNODE_ARGV0";
 pub const EXEC_ARGV_ENV: &str = "BUNODE_EXEC_ARGV";
+pub const ARGV_ENV: &str = "BUNODE_ARGV";
+pub const REQUIRE_ENV: &str = "BUNODE_REQUIRE";
 
-const PRELOAD_SOURCE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/preload.min.js"));
+const PRELOAD_FILE_NAME: &str = "bunode-preload.cjs";
+const PRELOAD_SOURCE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/preload.min.cjs"));
 
 pub fn prepare() -> Result<PathBuf, BunodeError> {
   let bun_path = bun::path()?;
   let bun_directory = bun_path
     .parent()
     .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "failed to resolve Bun directory"))?;
-  let preload_file_name = preload_file_name();
 
-  prepare_in_directory(bun_directory, &preload_file_name)
-    .or_else(|_| prepare_temporary(&preload_file_name))
+  prepare_in_directory(bun_directory, PRELOAD_FILE_NAME)
+    .or_else(|_| prepare_temporary(PRELOAD_FILE_NAME))
     .map_err(Into::into)
 }
 
@@ -104,19 +106,4 @@ fn write_private_preload_file(directory: &Path, prefix: &str, suffix: &str) -> i
   }
 
   Err(io::Error::new(io::ErrorKind::AlreadyExists, "failed to create Bunode preload file"))
-}
-
-fn preload_file_name() -> String {
-  format!("bunode-preload-{:016x}.js", fnv1a(PRELOAD_SOURCE))
-}
-
-fn fnv1a(value: &[u8]) -> u64 {
-  let mut result = 0xcbf2_9ce4_8422_2325;
-
-  for byte in value {
-    result ^= u64::from(*byte);
-    result = result.wrapping_mul(0x0000_0100_0000_01b3);
-  }
-
-  result
 }

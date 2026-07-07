@@ -8,7 +8,7 @@ use lexopt::Arg;
 use crate::error::CliError;
 
 use super::{
-  builtins, common_js_preload, data_url, env_file,
+  builtins, data_url, env_file,
   options::{HelpSection, OptionShape, OptionSpec, ValueMode, find_long_option, find_short_option},
 };
 
@@ -18,6 +18,7 @@ pub struct ExecutionPlan {
   pub command: NodeCommand,
   pub exec_argv: Vec<OsString>,
   pub bun_options: Vec<OsString>,
+  pub common_js_preloads: Vec<OsString>,
   pub script_arguments: Vec<OsString>,
 }
 
@@ -679,13 +680,18 @@ impl ParseState {
     let env_file_node_options = self.env_file_node_options;
 
     bun_options
-      .extend(resolve_common_js_preloads(builder.common_js_preloads, should_materialize_preloads)?);
-    bun_options
       .extend(resolve_es_module_preloads(builder.es_module_preloads, should_materialize_preloads)?);
     bun_options.extend(builder.bun_preloads);
 
     Ok((
-      ExecutionPlan { argv0, command, exec_argv: builder.exec_argv, bun_options, script_arguments },
+      ExecutionPlan {
+        argv0,
+        command,
+        exec_argv: builder.exec_argv,
+        bun_options,
+        common_js_preloads: builder.common_js_preloads,
+        script_arguments,
+      },
       env_file_node_options,
     ))
   }
@@ -757,26 +763,6 @@ impl ParseState {
   }
 }
 
-fn resolve_common_js_preloads(
-  values: Vec<OsString>,
-  should_materialize: bool,
-) -> Result<Vec<OsString>, CliError> {
-  let mut preloads = Vec::with_capacity(values.len());
-
-  for value in values {
-    if should_materialize {
-      let path = common_js_preload::materialize_require_wrapper(&value.to_string_lossy())?;
-
-      preloads.push(join_option_value("--preload", path.into_os_string()));
-      continue;
-    }
-
-    preloads.push(join_option_value("--preload", value));
-  }
-
-  Ok(preloads)
-}
-
 fn resolve_es_module_preloads(
   values: Vec<OsString>,
   should_materialize: bool,
@@ -822,40 +808,10 @@ mod tests {
     parse(args, Some(OsString::from(node_options)), &shape)
   }
 
-  fn assert_common_js_preload(option: &OsString, specifier: &str) {
-    let option = option.to_string_lossy();
-    let path = option.strip_prefix("--preload=").expect("CommonJS preload should be wrapped");
-    let wrapper = std::fs::read_to_string(path).expect("CommonJS wrapper should be readable");
+  fn assert_common_js_preloads(actual: &[OsString], expected: &[&str]) {
+    let expected = expected.iter().map(|value| OsString::from(*value)).collect::<Vec<_>>();
 
-    assert!(path.contains("bunode-require-preload"));
-    assert!(wrapper.contains("createRequire"));
-    assert!(wrapper.contains(&format!(")({});", js_string_literal(specifier))));
-  }
-
-  fn js_string_literal(value: &str) -> String {
-    format!("\"{}\"", escape_json_string(value))
-  }
-
-  fn escape_json_string(value: &str) -> String {
-    let mut result = String::new();
-
-    for character in value.chars() {
-      match character {
-        '"' => result.push_str("\\\""),
-        '\\' => result.push_str("\\\\"),
-        '\n' => result.push_str("\\n"),
-        '\r' => result.push_str("\\r"),
-        '\t' => result.push_str("\\t"),
-        character if character.is_control() => {
-          use std::fmt::Write as _;
-
-          let _ = write!(result, "\\u{:04x}", u32::from(character));
-        }
-        character => result.push(character),
-      }
-    }
-
-    result
+    assert_eq!(actual, expected);
   }
 
   #[test]
@@ -870,6 +826,7 @@ mod tests {
         command: NodeCommand::Script(OsString::from("script.js")),
         exec_argv: vec![OsString::from("--inspect")],
         bun_options: vec![OsString::from("--inspect=127.0.0.1:9229")],
+        common_js_preloads: Vec::new(),
         script_arguments: vec![OsString::from("--help"), OsString::from("--flag")],
       },
     );
@@ -888,6 +845,7 @@ mod tests {
         command: NodeCommand::Script(OsString::from("script.js")),
         exec_argv: vec![OsString::from("--inspect=127.0.0.1:9229")],
         bun_options: vec![OsString::from("--inspect=127.0.0.1:9229")],
+        common_js_preloads: Vec::new(),
         script_arguments: Vec::new(),
       },
     );
@@ -907,6 +865,7 @@ mod tests {
         command: NodeCommand::Script(OsString::from("--script.js")),
         exec_argv: Vec::new(),
         bun_options: Vec::new(),
+        common_js_preloads: Vec::new(),
         script_arguments: vec![OsString::from("--help")],
       },
     );
@@ -926,6 +885,7 @@ mod tests {
         command: NodeCommand::Direct,
         exec_argv: Vec::new(),
         bun_options: Vec::new(),
+        common_js_preloads: Vec::new(),
         script_arguments: vec![OsString::new(), OsString::from("arg")],
       },
     );
@@ -944,6 +904,7 @@ mod tests {
         command: NodeCommand::Print(OsString::from("process.argv.slice(1)")),
         exec_argv: vec![OsString::from("-p"), OsString::from("process.argv.slice(1)")],
         bun_options: Vec::new(),
+        common_js_preloads: Vec::new(),
         script_arguments: vec![OsString::from("first"), OsString::from("--second")],
       },
     );
@@ -967,6 +928,7 @@ mod tests {
           OsString::from("--conditions=custom"),
         ],
         bun_options: vec![OsString::from("--conditions=custom")],
+        common_js_preloads: Vec::new(),
         script_arguments: vec![OsString::from("first")],
       },
     );
@@ -1023,6 +985,7 @@ mod tests {
         command: NodeCommand::PrintStdin,
         exec_argv: vec![OsString::from("-p")],
         bun_options: Vec::new(),
+        common_js_preloads: Vec::new(),
         script_arguments: vec![OsString::from("-"), OsString::from("arg")],
       },
     );
@@ -1041,6 +1004,7 @@ mod tests {
         command: NodeCommand::Script(OsString::from("script.js")),
         exec_argv: vec![OsString::from("-p")],
         bun_options: Vec::new(),
+        common_js_preloads: Vec::new(),
         script_arguments: vec![OsString::from("--flag")],
       },
     );
@@ -1064,6 +1028,7 @@ mod tests {
           OsString::from("custom"),
         ],
         bun_options: vec![OsString::from("--conditions=custom")],
+        common_js_preloads: Vec::new(),
         script_arguments: vec![OsString::from("--flag")],
       },
     );
@@ -1082,6 +1047,7 @@ mod tests {
         command: NodeCommand::Print(OsString::from("1 + 1")),
         exec_argv: vec![OsString::from("-pe"), OsString::from("1 + 1")],
         bun_options: Vec::new(),
+        common_js_preloads: Vec::new(),
         script_arguments: Vec::new(),
       },
     );
@@ -1102,6 +1068,7 @@ mod tests {
         command: NodeCommand::Script(OsString::from("script.js")),
         exec_argv: vec![OsString::from("--conditions"), OsString::from("cli")],
         bun_options: vec![OsString::from("--conditions=env"), OsString::from("--conditions=cli")],
+        common_js_preloads: Vec::new(),
         script_arguments: Vec::new(),
       },
     );
@@ -1189,9 +1156,8 @@ mod tests {
     let options =
       parse_cli(&["node", "--import", "./esm.mjs", "--require", "./cjs.cjs", "-e", "0"])?;
 
-    assert_eq!(options.bun_options.len(), 2);
-    assert_common_js_preload(&options.bun_options[0], "./cjs.cjs");
-    assert_eq!(options.bun_options[1], OsString::from("--preload=./esm.mjs"));
+    assert_common_js_preloads(&options.common_js_preloads, &["./cjs.cjs"]);
+    assert_eq!(options.bun_options, vec![OsString::from("--preload=./esm.mjs")]);
 
     Ok(())
   }
@@ -1204,9 +1170,8 @@ mod tests {
       "--require ./env.cjs",
     )?;
 
-    assert_eq!(options.bun_options.len(), 2);
-    assert_common_js_preload(&options.bun_options[0], "./env.cjs");
-    assert_eq!(options.bun_options[1], OsString::from("--preload=./cli.js"));
+    assert_common_js_preloads(&options.common_js_preloads, &["./env.cjs"]);
+    assert_eq!(options.bun_options, vec![OsString::from("--preload=./cli.js")]);
 
     Ok(())
   }
@@ -1254,6 +1219,7 @@ mod tests {
       ],
     );
     assert_eq!(options.bun_options, Vec::<OsString>::new());
+    assert_eq!(options.common_js_preloads, Vec::<OsString>::new());
 
     Ok(())
   }
@@ -1338,8 +1304,8 @@ mod tests {
   fn parse_should_keep_double_quoted_node_options_value() -> Result<(), crate::error::CliError> {
     let options = parse_with_node_options(&["node", "-e", "0"], "--require \"./with space.js\"")?;
 
-    assert_eq!(options.bun_options.len(), 1);
-    assert_common_js_preload(&options.bun_options[0], "./with space.js");
+    assert_eq!(options.bun_options, Vec::<OsString>::new());
+    assert_common_js_preloads(&options.common_js_preloads, &["./with space.js"]);
 
     Ok(())
   }
@@ -1349,8 +1315,8 @@ mod tests {
   {
     let options = parse_with_node_options(&["node", "-e", "0"], "--require './preload.js'")?;
 
-    assert_eq!(options.bun_options.len(), 1);
-    assert_common_js_preload(&options.bun_options[0], "'./preload.js'");
+    assert_eq!(options.bun_options, Vec::<OsString>::new());
+    assert_common_js_preloads(&options.common_js_preloads, &["'./preload.js'"]);
 
     Ok(())
   }
@@ -1359,8 +1325,8 @@ mod tests {
   fn parse_should_preserve_node_options_backslashes() -> Result<(), crate::error::CliError> {
     let options = parse_with_node_options(&["node", "-e", "0"], r"--require C:\tmp\preload.js")?;
 
-    assert_eq!(options.bun_options.len(), 1);
-    assert_common_js_preload(&options.bun_options[0], r"C:\tmp\preload.js");
+    assert_eq!(options.bun_options, Vec::<OsString>::new());
+    assert_common_js_preloads(&options.common_js_preloads, &[r"C:\tmp\preload.js"]);
 
     Ok(())
   }
@@ -1370,8 +1336,8 @@ mod tests {
   {
     let options = parse_with_node_options(&["node", "-e", "0"], r#"--require "./x\" y.js""#)?;
 
-    assert_eq!(options.bun_options.len(), 1);
-    assert_common_js_preload(&options.bun_options[0], r#"./x" y.js"#);
+    assert_eq!(options.bun_options, Vec::<OsString>::new());
+    assert_common_js_preloads(&options.common_js_preloads, &[r#"./x" y.js"#]);
 
     Ok(())
   }

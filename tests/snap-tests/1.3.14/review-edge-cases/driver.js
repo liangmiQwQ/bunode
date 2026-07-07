@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -98,6 +98,43 @@ const conditionalPreload = run([
   'console.log("conditionalMain")'
 ])
 writeResult(conditionalPreload)
+
+const requireTempDir = mkdtempSync(join(tmpdir(), 'bunode-require-temp-'))
+try {
+  const samePreloadSource = 'globalThis.samePreloadCount = (globalThis.samePreloadCount ?? 0) + 1\n'
+
+  writeFileSync('same-preload-a.cjs', samePreloadSource)
+  writeFileSync('same-preload-b.cjs', samePreloadSource)
+
+  const noRequireWrapperFiles = run(
+    [
+      '--require',
+      './same-preload-a.cjs',
+      '--require',
+      './same-preload-b.cjs',
+      '-e',
+      'console.log(`samePreloadCount=${globalThis.samePreloadCount}`)'
+    ],
+    {
+      env: {
+        ...process.env,
+        TMPDIR: requireTempDir,
+        TMP: requireTempDir,
+        TEMP: requireTempDir
+      }
+    }
+  )
+
+  writeResult(noRequireWrapperFiles)
+
+  const requireWrapperFiles = readdirSync(requireTempDir).filter(fileName =>
+    fileName.startsWith('bunode-require-preload-')
+  )
+
+  process.stdout.write(`requireWrapperFiles=${requireWrapperFiles.length}\n`)
+} finally {
+  rmSync(requireTempDir, { recursive: true, force: true })
+}
 
 const streamWrap = run(['--require', '_stream_wrap', '-e', 'console.log("streamWrapOk")'])
 writeResult(streamWrap)

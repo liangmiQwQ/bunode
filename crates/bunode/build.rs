@@ -4,8 +4,8 @@ use std::{env, error::Error, fs, path::PathBuf};
 mod minify;
 
 fn main() -> Result<(), Box<dyn Error>> {
-  let source_path = PathBuf::from("src/preload/preload.js");
-  let output_path = PathBuf::from(env::var("OUT_DIR")?).join("preload.min.js");
+  let source_path = PathBuf::from("src/preload/preload.cjs");
+  let output_path = PathBuf::from(env::var("OUT_DIR")?).join("preload.min.cjs");
   let source = fs::read_to_string(&source_path)?;
   let minified = minify::minify(&source).map_err(std::io::Error::other)?;
 

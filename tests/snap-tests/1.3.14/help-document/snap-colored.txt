@@ -7,7 +7,7 @@ Options:
   -v, --version                   print Node-compatible Bunode version
   -e, --eval=...                  evaluate script
   -p, --print=...                 evaluate script and print the result
-  -r, --require=...               preload CommonJS module (translated to Bun preload)
+  -r, --require=...               preload CommonJS module
   --import=...                    preload ES module (translated to Bun preload)
   --inspect[=[host:]port]         activate inspector
   --inspect-brk[=[host:]port]     activate inspector and break at start

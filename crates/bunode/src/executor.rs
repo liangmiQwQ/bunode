@@ -129,11 +129,15 @@ impl Executor {
     } else {
       let preload_path = preload::prepare()?;
       let args = base::argv::build_bun_args(invocation, &mode, &preload_path);
+      let exec_path = env::current_exe()?;
+      let process_argv = build_process_argv(invocation, &mode, exec_path.as_os_str());
 
       // Bun sees itself as process.argv[0]; the preload patches Node-facing metadata.
-      command.env(preload::EXEC_PATH_ENV, env::current_exe()?);
+      command.env(preload::EXEC_PATH_ENV, &exec_path);
       command.env(preload::ARGV0_ENV, &invocation.argv0);
-      command.env(preload::EXEC_ARGV_ENV, encode_exec_argv_json(&invocation.exec_argv));
+      command.env(preload::EXEC_ARGV_ENV, encode_os_string_json(&invocation.exec_argv));
+      command.env(preload::ARGV_ENV, encode_os_string_json(&process_argv));
+      command.env(preload::REQUIRE_ENV, encode_os_string_json(&invocation.common_js_preloads));
 
       args
     };
@@ -152,6 +156,21 @@ fn invocation_with_script_argument(
 
   invocation.script_arguments.insert(0, argument);
   invocation
+}
+
+fn build_process_argv(
+  invocation: &ExecutionPlan,
+  mode: &BunMode<'_>,
+  exec_path: &OsStr,
+) -> Vec<OsString> {
+  let mut argv = vec![exec_path.to_os_string()];
+
+  if let BunMode::Script(script) = mode {
+    argv.push(script.to_os_string());
+  }
+
+  argv.extend(invocation.script_arguments.iter().cloned());
+  argv
 }
 
 fn build_eval_expression(code: &OsStr) -> std::ffi::OsString {
@@ -220,7 +239,7 @@ fn run_configured_bun(mut command: std::process::Command) -> io::Result<ExitStat
   command.status()
 }
 
-fn encode_exec_argv_json(values: &[std::ffi::OsString]) -> String {
+fn encode_os_string_json(values: &[std::ffi::OsString]) -> String {
   let values = values
     .iter()
     .map(|value| format!("\"{}\"", escape_json_string(&value.to_string_lossy())))
