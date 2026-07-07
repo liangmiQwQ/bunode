@@ -1,16 +1,71 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://bunode.dev/snap-tests.steps.schema.json",
-  "title": "Bunode snap test steps",
+  "$id": "https://bunode.dev/snap-tests.schema.json",
+  "title": "Bunode snap test",
   "type": "object",
   "additionalProperties": false,
+  "required": ["description", "commands"],
   "properties": {
+    "description": {
+      "description": "One sentence explaining the behavior this snap test protects.",
+      "type": "string",
+      "minLength": 1
+    },
     "commands": {
-      "description": "Shell commands run from the snap test directory. Combined output is compared with snap.txt and snap-colored.txt.",
+      "description": "Commands run from the snap test directory. Combined output is compared with snap.txt and snap-colored.txt.",
       "type": "array",
       "items": {
-        "type": "string",
-        "minLength": 1
+        "oneOf": [
+          {
+            "description": "Shell command run through the platform shell. Use this for simple commands.",
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "description": "Command run without shell quoting. Use this when the case needs args, stdin, env, or a non-zero exit code.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command"],
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cwd": {
+                "description": "Optional path relative to the snap test directory.",
+                "type": "string",
+                "minLength": 1
+              },
+              "stdin": {
+                "type": "string"
+              },
+              "stdinFile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": ["string", "null"]
+                }
+              },
+              "exitCode": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            },
+            "not": {
+              "required": ["stdin", "stdinFile"]
+            }
+          }
+        ]
       },
       "minItems": 1
     },

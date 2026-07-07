@@ -1,3 +1,0 @@
-{
-  "commands": ["node -- --script.js 2>&1 || true"]
-}
