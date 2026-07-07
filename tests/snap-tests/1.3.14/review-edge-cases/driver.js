@@ -16,9 +16,13 @@ function writeResult(result) {
   process.stderr.write(result.stderr)
 }
 
+function isSyntheticFilename(value, name) {
+  return [`/${name}`, `\\${name}`].some(suffix => value.endsWith(suffix))
+}
+
 const evalGlobals = run([
   '-e',
-  'console.log(`evalMeta=${__filename}:${__dirname}:${module.id}:${module.filename.endsWith("/[eval]")}:${require.main === module}:${typeof exports}:${typeof require}`)'
+  `${isSyntheticFilename.toString()}; console.log(\`evalMeta=\${__filename}:\${__dirname}:\${module.id}:\${isSyntheticFilename(module.filename, "[eval]")}:\${require.main === module}:\${typeof exports}:\${typeof require}\`)`
 ])
 writeResult(evalGlobals)
 
@@ -37,7 +41,7 @@ process.stdout.write(
 
 const printGlobals = run([
   '-p',
-  '`${module.id}:${module.filename.endsWith("/[eval]")}:${require.main === module}`'
+  `${isSyntheticFilename.toString()}; \`\${module.id}:\${isSyntheticFilename(module.filename, "[eval]")}:\${require.main === module}\``
 ])
 writeResult(printGlobals)
 
@@ -59,8 +63,7 @@ process.stdout.write(
 )
 
 const hashbangStdin = run(['-'], {
-  input:
-    '#!/usr/bin/env node\nvar stdinGlobal = 1\nconsole.log(`hashbangMeta=${__filename}:${__dirname}:${globalThis.stdinGlobal}:${module.id}:${module.filename.endsWith("/[stdin]")}:${require.main === module}`)\n'
+  input: `#!/usr/bin/env node\n${isSyntheticFilename.toString()}\nvar stdinGlobal = 1\nconsole.log(\`hashbangMeta=\${__filename}:\${__dirname}:\${globalThis.stdinGlobal}:\${module.id}:\${isSyntheticFilename(module.filename, "[stdin]")}:\${require.main === module}\`)\n`
 })
 writeResult(hashbangStdin)
 
