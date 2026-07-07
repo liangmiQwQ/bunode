@@ -65,9 +65,6 @@ pub enum CliUsageError {
   #[error("unterminated quote in NODE_OPTIONS")]
   UnterminatedNodeOptionsQuote,
 
-  #[error("unterminated quoted value in env file")]
-  UnterminatedEnvFileValue,
-
   #[error("data URL imports passed to --import are not supported")]
   UnsupportedDataUrlImport,
 

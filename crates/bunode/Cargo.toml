@@ -19,6 +19,7 @@ oxc_parser = { workspace = true }
 oxc_span = { workspace = true }
 
 [dependencies]
+deno_dotenv = { workspace = true }
 lexopt = { workspace = true }
 semver = { workspace = true }
 thiserror = { workspace = true }
