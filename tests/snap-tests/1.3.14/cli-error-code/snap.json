@@ -1,0 +1,16 @@
+{
+  "description": "Invalid wrapper options and preload exits preserve observable Node-style failure codes.",
+  "commands": [
+    {
+      "command": "node",
+      "args": ["--eval"],
+      "exitCode": 9
+    },
+    {
+      "command": "node",
+      "args": ["--inspect="],
+      "exitCode": 9
+    },
+    "node stdin-preload-exit-driver.js"
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "description": "--print keeps Node-style Promise inspection, eval metadata, and ESM/syntax error boundaries.",
+  "commands": ["node print-boundary-driver.js"]
+}

@@ -1,0 +1,4 @@
+{
+  "description": "--version ignores Bun config preloads so version managers receive clean output.",
+  "commands": ["node --version"]
+}

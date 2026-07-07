@@ -1,0 +1,1 @@
+hashbangMeta=[stdin]:.:1:[stdin]:true:false

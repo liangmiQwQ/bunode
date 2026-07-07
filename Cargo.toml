@@ -25,4 +25,13 @@ pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
-clap = { version = "4.6.1", features = ["derive"] }
+deno_dotenv = "0.22.0"
+lexopt = "0.3.2"
+semver = "1.0.28"
+textwrap = "0.16.2"
+thiserror = "2.0.18"
+oxc_allocator = "0.138.0"
+oxc_codegen = "0.138.0"
+oxc_minifier = "0.138.0"
+oxc_parser = "0.138.0"
+oxc_span = "0.138.0"

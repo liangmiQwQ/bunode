@@ -1,0 +1,6 @@
+bunode: `--eval` is not allowed in NODE_OPTIONS
+bunode: `--env-file` is not allowed in NODE_OPTIONS
+bunode: `--` is not allowed in NODE_OPTIONS
+bunode: `script.js` is not allowed in NODE_OPTIONS
+bunode: data URL imports passed to --import are not supported
+real-env-file=ok

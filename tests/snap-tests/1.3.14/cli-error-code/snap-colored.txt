@@ -1,0 +1,4 @@
+bunode: option `--eval` requires a value
+bunode: option `--inspect` requires a value
+stdin-preload-exit=42
+stdin-preload-open=42

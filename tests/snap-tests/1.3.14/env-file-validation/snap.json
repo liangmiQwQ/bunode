@@ -1,0 +1,7 @@
+{
+  "description": "--env-file validation runs before --version and --help short-circuit output.",
+  "commands": [
+    "node --env-file missing.env --version 2>&1 || true",
+    "node --env-file missing.env --help 2>&1 || true"
+  ]
+}

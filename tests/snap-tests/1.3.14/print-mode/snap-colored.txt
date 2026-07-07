@@ -1,0 +1,17 @@
+[90mundefined[39m
+[33m3[39m
+{"execArgv":["-p"],"argv":["-","arg"]}
+function
+{"file":"[stdin]","dir":"."}
+[33m3[39m
+[33m42[39m
+[33m2[39m
+expr
+["a","--","b"]
+["--","--"]
+{"execArgv":["-p","JSON.stringify({ execArgv: process.execArgv, argv: process.argv.slice(1) })","--conditions","custom"],"argv":["arg"]}
+[90mundefined[39m
+print
+b
+scriptExecArgv=["-p"]
+scriptArgv=script.js|--flag

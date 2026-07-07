@@ -1,0 +1,4 @@
+{
+  "description": "A bare -- operand is treated as a script boundary and reports the script lookup error.",
+  "commands": ["node -- --script.js 2>&1 || true"]
+}

@@ -1,33 +1,40 @@
 //! This module is used to call `bun` binary.
-//! This module should only include `bun` binary finding, and exported `bun` function.
+//! This module should only include `bun` binary finding, and command construction.
 //! Any wrapper logic (translate, argv generation) should be put outside of this module.
-//!
-//! Core function: `bun` function, it receives argvs you push to Bun.
 
-use std::{
-  env,
-  ffi::OsString,
-  io,
-  path::PathBuf,
-  process::{Command, ExitStatus},
-};
+use std::{env, path::PathBuf, process::Command};
 
-#[allow(dead_code)]
-pub fn bun(args: &[OsString]) -> io::Result<ExitStatus> {
-  // We don't modify output. (See rfcs/rust-wrapper-core.md)
-  Command::new(find()?).args(args).status()
+use crate::error::BunodeError;
+
+pub fn command() -> Result<Command, BunodeError> {
+  let bun_path = path()?;
+
+  if bun_path.exists() {
+    Ok(Command::new(bun_path))
+  } else {
+    Err(BunodeError::BunBinaryNotFoundWithPath(bun_path))
+  }
 }
 
-fn find() -> io::Result<PathBuf> {
+pub fn bun_binary_directory() -> Result<PathBuf, BunodeError> {
   let executable = env::current_exe()?;
-  let executable_dir = executable.parent().ok_or_else(|| {
-    io::Error::new(io::ErrorKind::NotFound, "failed to resolve Bunode executable directory")
-  })?;
+  let executable_dir = executable.parent().ok_or(BunodeError::BunBinaryNotFound())?;
 
   #[cfg(windows)]
-  let result = { executable_dir.join("bun").join("bun.exe") };
+  let result = { executable_dir.join("bun") };
   #[cfg(not(windows))]
-  let result = { executable_dir.join("..").join("bun").join("bun") };
+  let result = { executable_dir.join("..").join("bun") };
+
+  Ok(result)
+}
+
+pub fn path() -> Result<PathBuf, BunodeError> {
+  let bun_binary_directory = bun_binary_directory()?;
+
+  #[cfg(windows)]
+  let result = { bun_binary_directory.join("bun.exe") };
+  #[cfg(not(windows))]
+  let result = { bun_binary_directory.join("bun") };
 
   Ok(result)
 }

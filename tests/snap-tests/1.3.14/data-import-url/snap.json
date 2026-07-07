@@ -1,0 +1,15 @@
+{
+  "description": "--import rejects data: URLs consistently for lower-case and upper-case schemes.",
+  "commands": [
+    {
+      "command": "node",
+      "args": ["--import", "data:text/javascript,globalThis.dataLoaded=1", "-e", "0"],
+      "exitCode": 9
+    },
+    {
+      "command": "node",
+      "args": ["--import", "DATA:text/javascript,globalThis.dataLoaded=2", "-e", "0"],
+      "exitCode": 9
+    }
+  ]
+}

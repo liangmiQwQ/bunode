@@ -1,0 +1,27 @@
+{
+  "description": "NODE_OPTIONS and --env-file NODE_OPTIONS can inject require preloads before --print.",
+  "commands": [
+    {
+      "command": "node",
+      "args": [
+        "-p",
+        "`${globalThis.fromNodeOptionsValue}:${globalThis.fromNodeOptionsArgv0Patched}`"
+      ],
+      "env": {
+        "NODE_OPTIONS": "--require ./preload.js"
+      }
+    },
+    {
+      "command": "node",
+      "args": [
+        "--env-file",
+        "node-options.env",
+        "-p",
+        "`${globalThis.fromNodeOptionsValue}:${globalThis.fromNodeOptionsArgv0Patched}`"
+      ],
+      "env": {
+        "NODE_OPTIONS": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "description": "--env-file NODE_OPTIONS tolerates malformed unrelated values and handles literal or escaped newlines.",
+  "commands": [
+    {
+      "command": "node",
+      "args": ["--env-file", "mixed.env", "-e", "console.log(\"mixedEnvOk\")"]
+    },
+    {
+      "command": "node",
+      "args": ["--env-file", "multi.env", "-e", "console.log(\"multiMain\")"]
+    },
+    {
+      "command": "node",
+      "args": ["--env-file", "escaped.env", "-e", "console.log(\"escapedMain\")"]
+    }
+  ]
+}

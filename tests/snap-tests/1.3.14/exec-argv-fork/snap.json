@@ -1,0 +1,4 @@
+{
+  "description": "Forwarded Bun flags, custom conditions, and require preloads survive child_process.fork.",
+  "commands": ["node --bun-smol --conditions custom -r ./preload.cjs parent.cjs"]
+}

@@ -1,0 +1,7 @@
+var stdinGlobal = 1
+const normalized = process.execPath.replaceAll('\\', '/')
+process.stdout.write(`argvLength=${process.argv.length}\n`)
+process.stdout.write(`hasDashArgv=${process.argv.includes('-')}\n`)
+process.stdout.write(`execPath=${['/.dev/bin/node', '/.dev/node.exe'].some(suffix => normalized.endsWith(suffix))}\n`)
+process.stdout.write(`argvTail=${process.argv.slice(1).map(value => value === '' ? '<empty>' : value).join('|')}\n`)
+process.stdout.write(`globalVar=${globalThis.stdinGlobal}\n`)

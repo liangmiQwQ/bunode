@@ -33,7 +33,7 @@ Use pnpm catalog for workspace package dependencies. Keep dependency versions in
 Rust tasks are also defined in Vite+ (Vite Task), in project root's `vite.config.ts`.
 Run `vpr check` (lint and format for both Rust and JavaScript) and `vpr test` after you make changes.
 
-Core wrapper snap tests run through Vite+ and compare both plain and forced-color CLI output. Keep their steps declarative and schema-backed. They are defined in `tests/snap-tests/<bun-ver>/<project-name>`. If a test can be done in both Rust util test and snap tests, prefer snap tests.
+Core wrapper snap tests run through Vite+ and compare both plain and forced-color CLI output. Keep their `snap.json` commands declarative, schema-backed, and described with a short behavior-oriented `description`. Prefer plain command strings or command objects over driver files; use a driver only when process orchestration cannot be expressed cleanly in `snap.json`. They are defined in `tests/snap-tests/<bun-ver>/<project-name>`. If a test can be done in both Rust util test and snap tests, prefer snap tests.
 
 Keep AGENTS.md updated with the project codebase. Consider if there is need to modify AGENTS.md after your changes. Don't store detail things like file structure or project implementation details in AGENTS.md.
 

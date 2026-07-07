@@ -1,0 +1,10 @@
+{
+  "description": "Stdin scripts strip hashbangs while preserving Node-style synthetic module metadata.",
+  "commands": [
+    {
+      "command": "node",
+      "args": ["-"],
+      "stdinFile": "hashbang.txt"
+    }
+  ]
+}

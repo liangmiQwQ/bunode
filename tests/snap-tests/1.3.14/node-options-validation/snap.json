@@ -1,0 +1,52 @@
+{
+  "description": "NODE_OPTIONS rejects disallowed flags while real --env-file parsing remains available.",
+  "commands": [
+    {
+      "command": "node",
+      "args": ["--version"],
+      "env": {
+        "NODE_OPTIONS": "--eval 1"
+      },
+      "exitCode": 9
+    },
+    {
+      "command": "node",
+      "args": ["--version"],
+      "env": {
+        "NODE_OPTIONS": "--env-file local.env"
+      },
+      "exitCode": 9
+    },
+    {
+      "command": "node",
+      "args": ["--version"],
+      "env": {
+        "NODE_OPTIONS": "--"
+      },
+      "exitCode": 9
+    },
+    {
+      "command": "node",
+      "args": ["--version"],
+      "env": {
+        "NODE_OPTIONS": "script.js"
+      },
+      "exitCode": 9
+    },
+    {
+      "command": "node",
+      "args": ["--version"],
+      "env": {
+        "NODE_OPTIONS": "--import data:text/javascript,%GG"
+      },
+      "exitCode": 9
+    },
+    {
+      "command": "node",
+      "args": ["--env-file", "bad-node-options.env", "-e", "console.log(\"real-env-file=ok\")"],
+      "env": {
+        "NODE_OPTIONS": "--conditions custom"
+      }
+    }
+  ]
+}

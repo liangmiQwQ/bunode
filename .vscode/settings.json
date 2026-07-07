@@ -14,7 +14,7 @@
 
   "json.schemas": [
     {
-      "fileMatch": ["/tests/snap-tests/*/*/steps.json"],
+      "fileMatch": ["/tests/snap-tests/*/*/snap.json"],
       "url": "./tests/snap-tests.schema.json"
     }
   ]

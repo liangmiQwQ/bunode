@@ -1,0 +1,11 @@
+argvLength=1
+hasDashArgv=false
+execPath=true
+argvTail=
+globalVar=1
+argvLength=3
+hasDashArgv=false
+execPath=true
+argvTail=<empty>|arg
+globalVar=1
+esmStdin=function:ready

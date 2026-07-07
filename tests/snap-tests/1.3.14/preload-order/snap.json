@@ -1,0 +1,8 @@
+{
+  "description": "--require runs before --import and built-in preload specifiers remain accepted.",
+  "commands": [
+    "node --import ./esm.mjs --require ./cjs.cjs -e \"0\"",
+    "node --require ./cjs.cjs",
+    "node --import node:fs --require fs -e \"console.log('builtin')\""
+  ]
+}

@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vite-plus/test'
 
 const projectRoot = resolve(import.meta.dirname, '..')
 const snapTestsRoot = resolve(import.meta.dirname, 'snap-tests')
-const stepsFileName = 'steps.json'
+const snapConfigFileName = 'snap.json'
 const snapFileName = 'snap.txt'
 const snapColoredFileName = 'snap-colored.txt'
 const devSetupTimeout = 300_000
@@ -20,8 +20,21 @@ const ansiPattern = new RegExp(
 )
 const knownPlatforms = new Set(['darwin', 'linux', 'win32'])
 
-interface Steps {
-  commands: string[]
+type SnapCommand = string | SnapCommandConfig
+
+interface SnapCommandConfig {
+  command: string
+  args: string[]
+  cwd: string | undefined
+  stdin: string | undefined
+  stdinFile: string | undefined
+  env: Record<string, string | null>
+  exitCode: number
+}
+
+interface SnapConfig {
+  description: string
+  commands: SnapCommand[]
   ignore: string[]
   after: string[]
 }
@@ -29,8 +42,9 @@ interface Steps {
 interface SnapTest {
   bunVersion: string
   name: string
+  description: string
   directory: string
-  steps: Steps
+  config: SnapConfig
 }
 
 interface SnapTestGroup {
@@ -43,23 +57,23 @@ const snapTestGroups = groupSnapTests(snapTests)
 
 describe('snap tests', () => {
   describe.each(snapTestGroups)('$bunVersion', ({ bunVersion, tests }) => {
-    const runnableTests = tests.filter(snapTest => !snapTest.steps.ignore.includes(platform))
+    const runnableTests = tests.filter(snapTest => !snapTest.config.ignore.includes(platform))
 
     beforeAll(async () => {
       await setupDevBuild(bunVersion)
     }, devSetupTimeout)
 
     it.each(runnableTests)(
-      '$bunVersion/$name',
+      '$bunVersion/$name - $description',
       { timeout: snapTestTimeout, concurrent: false },
       async snapTest => {
         const plainOutput = stripAnsi(
-          await runSnapshotPhase(snapTest.steps, snapTest.directory, createSnapEnv('plain'))
+          await runSnapshotPhase(snapTest.config, snapTest.directory, createSnapEnv('plain'))
         )
         await expect(plainOutput).toMatchFileSnapshot(resolve(snapTest.directory, snapFileName))
 
         const coloredOutput = await runSnapshotPhase(
-          snapTest.steps,
+          snapTest.config,
           snapTest.directory,
           createSnapEnv('colored')
         )
@@ -81,12 +95,14 @@ async function loadSnapTests() {
       const directory = resolve(bunVersionDirectory, name)
       await readRequiredFile(resolve(directory, snapFileName))
       await readRequiredFile(resolve(directory, snapColoredFileName))
+      const config = await readSnapConfig(resolve(directory, snapConfigFileName))
 
       snapTests.push({
         bunVersion,
         name,
+        description: config.description,
         directory,
-        steps: await readSteps(resolve(directory, stepsFileName))
+        config
       })
     }
   }
@@ -117,29 +133,30 @@ async function readRequiredFile(filePath: string) {
   await readFile(filePath, 'utf8')
 }
 
-async function readSteps(filePath: string): Promise<Steps> {
+async function readSnapConfig(filePath: string): Promise<SnapConfig> {
   const value = parseJson(await readFile(filePath, 'utf8'), filePath)
   assertObject(value, filePath)
 
-  const steps = {
-    commands: readStringArray(value, 'commands', filePath),
+  const config = {
+    description: readString(value, 'description', filePath),
+    commands: readRequiredSnapCommands(value, filePath),
     ignore: readStringArray(value, 'ignore', filePath),
     after: readStringArray(value, 'after', filePath)
   }
 
   for (const key of Object.keys(value)) {
-    if (key !== 'commands' && key !== 'ignore' && key !== 'after') {
+    if (key !== 'description' && key !== 'commands' && key !== 'ignore' && key !== 'after') {
       throw new Error(`${filePath}: unknown field "${key}"`)
     }
   }
 
-  for (const ignoredPlatform of steps.ignore) {
+  for (const ignoredPlatform of config.ignore) {
     if (!knownPlatforms.has(ignoredPlatform)) {
       throw new Error(`${filePath}: unknown ignored OS "${ignoredPlatform}"`)
     }
   }
 
-  return steps
+  return config
 }
 
 function parseJson(source: string, filePath: string) {
@@ -156,9 +173,23 @@ function assertObject(value: unknown, filePath: string): asserts value is Record
   }
 }
 
+function readString(
+  value: Record<string, unknown>,
+  field: 'description' | 'command',
+  filePath: string
+) {
+  const rawValue = value[field]
+
+  if (typeof rawValue !== 'string' || !rawValue) {
+    throw new Error(`${filePath}: "${field}" must be a non-empty string`)
+  }
+
+  return rawValue
+}
+
 function readStringArray(
   value: Record<string, unknown>,
-  field: 'commands' | 'ignore' | 'after',
+  field: 'ignore' | 'after',
   filePath: string
 ) {
   const rawValue = value[field]
@@ -174,6 +205,125 @@ function readStringArray(
   return rawValue
 }
 
+function readRequiredSnapCommands(value: Record<string, unknown>, filePath: string) {
+  const rawValue = value.commands
+
+  if (!Array.isArray(rawValue) || rawValue.length === 0) {
+    throw new Error(`${filePath}: "commands" must include at least one command`)
+  }
+
+  return rawValue.map((item, index) => readSnapCommand(item, `${filePath}: commands[${index}]`))
+}
+
+function readSnapCommand(value: unknown, location: string): SnapCommand {
+  if (typeof value === 'string' && value) {
+    return value
+  }
+
+  assertObject(value, location)
+
+  const command = readString(value, 'command', location)
+  const args = readOptionalStringArray(value, 'args', location)
+  const cwd = readOptionalString(value, 'cwd', location)
+  const stdin = readOptionalString(value, 'stdin', location)
+  const stdinFile = readOptionalString(value, 'stdinFile', location)
+  const env = readEnv(value, location)
+  const exitCode = readExitCode(value, location)
+
+  if (stdin !== undefined && stdinFile !== undefined) {
+    throw new Error(`${location}: "stdin" and "stdinFile" cannot be used together`)
+  }
+
+  for (const key of Object.keys(value)) {
+    if (
+      key !== 'command' &&
+      key !== 'args' &&
+      key !== 'cwd' &&
+      key !== 'stdin' &&
+      key !== 'stdinFile' &&
+      key !== 'env' &&
+      key !== 'exitCode'
+    ) {
+      throw new Error(`${location}: unknown field "${key}"`)
+    }
+  }
+
+  return { command, args, cwd, stdin, stdinFile, env, exitCode }
+}
+
+function readOptionalString(
+  value: Record<string, unknown>,
+  field: 'cwd' | 'stdin' | 'stdinFile',
+  location: string
+): string | undefined {
+  const rawValue = value[field]
+
+  if (rawValue === undefined) {
+    return undefined
+  }
+
+  if (typeof rawValue !== 'string') {
+    throw new TypeError(`${location}: "${field}" must be a string`)
+  }
+
+  return rawValue
+}
+
+function readOptionalStringArray(value: Record<string, unknown>, field: 'args', location: string) {
+  const rawValue = value[field]
+
+  if (rawValue === undefined) {
+    return []
+  }
+
+  if (!Array.isArray(rawValue) || rawValue.some(item => typeof item !== 'string')) {
+    throw new Error(`${location}: "${field}" must be an array of strings`)
+  }
+
+  return rawValue
+}
+
+function readEnv(value: Record<string, unknown>, location: string) {
+  const rawValue = value.env
+
+  if (rawValue === undefined) {
+    return {}
+  }
+
+  assertObject(rawValue, `${location}: env`)
+
+  const env: Record<string, string | null> = {}
+
+  for (const [key, item] of Object.entries(rawValue)) {
+    if (typeof item !== 'string' && item !== null) {
+      throw new Error(`${location}: env.${key} must be a string or null`)
+    }
+
+    env[key] = item
+  }
+
+  return env
+}
+
+function readExitCode(value: Record<string, unknown>, location: string) {
+  const rawValue = value.exitCode
+
+  if (rawValue === undefined) {
+    return 0
+  }
+
+  if (
+    typeof rawValue !== 'number' ||
+    !Number.isInteger(rawValue) ||
+    rawValue < 0 ||
+    rawValue > 255
+  ) {
+    throw new Error(`${location}: "exitCode" must be an integer from 0 to 255`)
+  }
+
+  return rawValue
+}
+
 async function setupDevBuild(bunVersion: string) {
   if (!skipCargoDevBuild) {
     await runProcess('cargo', ['build', '-p', 'bunode'], projectRoot, process.env)
@@ -183,7 +333,7 @@ async function setupDevBuild(bunVersion: string) {
 }
 
 async function runSnapshotPhase(
-  steps: Steps,
+  config: SnapConfig,
   cwd: string,
   env: NodeJS.ProcessEnv,
   signal?: AbortSignal
@@ -193,13 +343,13 @@ async function runSnapshotPhase(
   let cleanupError: unknown
 
   try {
-    output = await runCommands(steps.commands, cwd, env, signal)
+    output = await runCommands(config.commands, cwd, env, signal)
   } catch (error) {
     commandError = error
   }
 
   try {
-    await runCommands(steps.after, cwd, env, signal)
+    await runCommands(config.after, cwd, env, signal)
   } catch (error) {
     cleanupError = error
   }
@@ -212,7 +362,7 @@ async function runSnapshotPhase(
 }
 
 async function runCommands(
-  commands: string[],
+  commands: SnapCommand[],
   cwd: string,
   env: NodeJS.ProcessEnv,
   signal?: AbortSignal
@@ -220,37 +370,111 @@ async function runCommands(
   let output = ''
 
   for (const command of commands) {
-    output += await runShellCommand(command, cwd, env, signal)
+    output += await runSnapCommand(command, cwd, env, signal)
   }
 
   return output
 }
 
-function runShellCommand(
-  command: string,
+async function runSnapCommand(
+  command: SnapCommand,
   cwd: string,
   env: NodeJS.ProcessEnv,
   signal?: AbortSignal
 ) {
+  if (typeof command === 'string') {
+    return runCommandProcess(command, [], 0, cwd, env, undefined, true, signal)
+  }
+
+  const commandEnv = createCommandEnv(env, command.env)
+  const commandCwd = command.cwd === undefined ? cwd : resolve(cwd, command.cwd)
+  const stdin = await readCommandStdin(command, commandCwd)
+
+  return runCommandProcess(
+    command.command,
+    command.args,
+    command.exitCode,
+    commandCwd,
+    commandEnv,
+    stdin,
+    false,
+    signal
+  )
+}
+
+function createCommandEnv(env: NodeJS.ProcessEnv, overrides: Record<string, string | null>) {
+  const commandEnv: NodeJS.ProcessEnv = { ...env }
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === null) {
+      delete commandEnv[key]
+    } else {
+      commandEnv[key] = value
+    }
+  }
+
+  return commandEnv
+}
+
+async function readCommandStdin(
+  command: SnapCommandConfig,
+  cwd: string
+): Promise<string | undefined> {
+  if (command.stdin !== undefined) {
+    return command.stdin
+  }
+
+  if (command.stdinFile !== undefined) {
+    return readFile(resolve(cwd, command.stdinFile), 'utf8')
+  }
+
+  return undefined
+}
+
+function runCommandProcess(
+  command: string,
+  args: string[],
+  exitCode: number,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  stdin: string | undefined,
+  shell: boolean,
+  signal?: AbortSignal
+) {
   return new Promise<string>((resolve, reject) => {
-    const child = spawn(command, {
+    const child = spawn(command, args, {
       cwd,
       env,
-      shell: true,
+      shell,
       signal,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe']
     })
     let output = ''
     let settled = false
+    const { stdin: childStdin, stdout, stderr } = child
 
-    child.stdout.setEncoding('utf8')
-    child.stderr.setEncoding('utf8')
-    child.stdout.on('data', chunk => {
+    if (!stdout || !stderr) {
+      reject(new Error(`${formatCommand(command, args)} did not expose stdout and stderr pipes`))
+      return
+    }
+
+    stdout.setEncoding('utf8')
+    stderr.setEncoding('utf8')
+    stdout.on('data', chunk => {
       output += chunk
     })
-    child.stderr.on('data', chunk => {
+    stderr.on('data', chunk => {
       output += chunk
     })
+
+    if (stdin !== undefined) {
+      if (!childStdin) {
+        reject(new Error(`${formatCommand(command, args)} did not expose a stdin pipe`))
+        return
+      }
+
+      childStdin.end(stdin)
+    }
 
     child.on('error', error => {
       if (!settled) {
@@ -266,14 +490,22 @@ function runShellCommand(
 
       settled = true
 
-      if (code === 0) {
+      if ((code ?? 1) === exitCode) {
         resolve(output)
         return
       }
 
-      reject(new Error(`${command} exited with code ${code ?? 1} in ${cwd}\n${output}`))
+      reject(
+        new Error(
+          `${formatCommand(command, args)} exited with code ${code ?? 1}, expected ${exitCode} in ${cwd}\n${output}`
+        )
+      )
     })
   })
+}
+
+function formatCommand(command: string, args: string[]) {
+  return args.length === 0 ? command : `${command} ${args.join(' ')}`
 }
 
 function runProcess(
