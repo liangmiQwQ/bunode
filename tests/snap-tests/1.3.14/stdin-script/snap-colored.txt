@@ -8,3 +8,4 @@ hasDashArgv=false
 execPath=true
 argvTail=<empty>|arg
 globalVar=1
+esmStdin=function:ready

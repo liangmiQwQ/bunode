@@ -75,7 +75,7 @@ We wrap `bun repl`.
 
 We can't make the behavior 100% compatible but it is basically similar. Considering this feature is mainly for human to call, so I think it's not a big deal.
 
-For CI and non-TTY environment, Node.js executes stdin instead of starting the REPL. Bunode starts Bun first and passes a small eval shim that reads fd 0 inside Bun, so preloads can run and exit before an unbounded stdin pipe is drained.
+For CI and non-TTY environment, Node.js executes stdin instead of starting the REPL. Bunode starts Bun first and passes a small stdin shim that reads fd 0 inside Bun, so preloads can run and exit before an unbounded stdin pipe is drained. Plain script stdin keeps Node-like script globals through indirect eval, while stdin that needs module parsing is loaded through an in-memory Blob module so static imports and top-level await still work.
 
 For `node -p` reading the program from stdin, Bunode passes Bun a small print expression that reads fd 0 inside Bun, exposes stdin-like globals, and evaluates the user program without helper bindings colliding with user declarations.
 
@@ -89,13 +89,13 @@ For Node.js options, we will try to translate them to Bun options or wrap them a
 
 The parser should build Bun args as segmented output instead of through a stable parsed-command struct. The final Bun command is assembled after command mode is known:
 
-| Node.js mode | Bun command shape                                                    |
-| ------------ | -------------------------------------------------------------------- |
-| script       | `bun run --no-install --no-env-file ... <script> ...arguments`       |
-| stdin        | `bun --no-install --no-env-file ... -e <fd0 eval shim> ...arguments` |
-| eval         | `bun --no-install --no-env-file ... -e <code> ...arguments`          |
-| print        | `bun --no-install --no-env-file ... -p <code> ...arguments`          |
-| repl         | `bun repl`                                                           |
+| Node.js mode | Bun command shape                                                     |
+| ------------ | --------------------------------------------------------------------- |
+| script       | `bun run --no-install --no-env-file ... <script> ...arguments`        |
+| stdin        | `bun --no-install --no-env-file ... -e <fd0 stdin shim> ...arguments` |
+| eval         | `bun --no-install --no-env-file ... -e <code> ...arguments`           |
+| print        | `bun --no-install --no-env-file ... -p <code> ...arguments`           |
+| repl         | `bun repl`                                                            |
 
 For `NODE_OPTIONS`, we follow the same translating method and handle priority the same as Node does. Real `NODE_OPTIONS` is parsed first in env mode. When real `NODE_OPTIONS` is absent, `NODE_OPTIONS` loaded from `--env-file` is parsed in env mode before CLI flags, while the `--env-file` flag itself is still forwarded to Bun for normal environment loading.
 

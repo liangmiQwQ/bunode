@@ -83,14 +83,14 @@ impl Executor {
   }
 
   fn run_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
-    let code = build_stdin_eval_expression();
+    let code = build_stdin_module_expression();
 
     Self::run_bun(invocation, BunMode::Eval(code.as_os_str()))
   }
 
   fn run_script_stdin(invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {
     let invocation = invocation_with_script_argument(invocation, OsString::from("-"));
-    let code = build_stdin_eval_expression();
+    let code = build_stdin_module_expression();
 
     Self::run_bun(&invocation, BunMode::Eval(code.as_os_str()))
   }
@@ -149,7 +149,14 @@ fn invocation_with_script_argument(
 fn build_stdin_eval_expression() -> std::ffi::OsString {
   // Read fd 0 inside Bun so preloads can exit before an unbounded pipe is drained.
   std::ffi::OsString::from(
-    "(()=>{const __bunodeFs=require(\"node:fs\");Object.assign(globalThis,{__filename:\"[stdin]\",__dirname:\".\",require,module,exports});return globalThis.eval(__bunodeFs.readFileSync(0,\"utf8\"))})()",
+    "(()=>{const __bunodeFs=require(\"node:fs\");const __bunodeModule=globalThis.module??{exports:{}};const __bunodeExports=globalThis.exports??__bunodeModule.exports;Object.assign(globalThis,{__filename:\"[stdin]\",__dirname:\".\",require,module:__bunodeModule,exports:__bunodeExports});return globalThis.eval(__bunodeFs.readFileSync(0,\"utf8\"))})()",
+  )
+}
+
+fn build_stdin_module_expression() -> std::ffi::OsString {
+  // Parse first: plain stdin keeps Node's script-like globals, while ESM stdin uses a Blob module.
+  std::ffi::OsString::from(
+    "await(async()=>{const __bunodeFs=require(\"node:fs\");const __bunodeSource=__bunodeFs.readFileSync(0,\"utf8\");if(__bunodeSource.length===0)return;try{new Function(__bunodeSource);const __bunodeModule=globalThis.module??{exports:{}};const __bunodeExports=globalThis.exports??__bunodeModule.exports;Object.assign(globalThis,{__filename:\"[stdin]\",__dirname:\".\",require,module:__bunodeModule,exports:__bunodeExports});return globalThis.eval(__bunodeSource)}catch(__bunodeError){if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{type:\"text/javascript\"}));try{await import(__bunodeUrl)}finally{URL.revokeObjectURL(__bunodeUrl)}}})()",
   )
 }
 

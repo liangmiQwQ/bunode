@@ -35,3 +35,22 @@ process.stderr.write(emptyOperandResult.stderr)
 if (emptyOperandResult.status !== 0) {
   throw new Error(`empty operand stdin child exited with code ${emptyOperandResult.status ?? 1}`)
 }
+
+const moduleSource = `
+import { readFileSync } from 'node:fs'
+const value = await Promise.resolve('ready')
+console.log(\`esmStdin=\${typeof readFileSync}:\${value}\`)
+`
+
+const moduleResult = spawnSync(process.execPath, ['-'], {
+  input: moduleSource,
+  encoding: 'utf8',
+  env: process.env
+})
+
+process.stdout.write(moduleResult.stdout)
+process.stderr.write(moduleResult.stderr)
+
+if (moduleResult.status !== 0) {
+  throw new Error(`module stdin child exited with code ${moduleResult.status ?? 1}`)
+}
