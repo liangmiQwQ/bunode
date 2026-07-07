@@ -32,6 +32,12 @@ process.stdout.write(
   `evalRuntimeOnce=${evalRuntimeSyntax.stdout.split('evalRuntimeOnce').length - 1}\n`
 )
 
+const evalHashbang = run([
+  '-e',
+  `#!/usr/bin/env node\n${isSyntheticFilename.toString()}\nvar evalHashbangGlobal = 1\nconsole.log(\`evalHashbangMeta=\${__filename}:\${__dirname}:\${globalThis.evalHashbangGlobal}:\${module.id}:\${isSyntheticFilename(module.filename, "[eval]")}:\${require.main === module}\`)`
+])
+writeResult(evalHashbang)
+
 const printPromise = run(['-p', 'Promise.resolve(1)'])
 const printPromiseOutput = printPromise.stdout.trim()
 process.stdout.write(`printPromiseStatus=${printPromise.status}\n`)
@@ -75,6 +81,14 @@ writeFileSync('multi-preload.cjs', 'console.log("multiPreload")\n')
 writeFileSync('multi.env', 'NODE_OPTIONS="--require ./multi-preload.cjs\n--conditions custom"\n')
 const multiEnv = run(['--env-file', 'multi.env', '-e', 'console.log("multiMain")'])
 writeResult(multiEnv)
+
+writeFileSync('escaped-preload.cjs', 'console.log("escapedPreload")\n')
+writeFileSync(
+  'escaped.env',
+  'NODE_OPTIONS="--require ./escaped-preload.cjs\\n--conditions custom"\n'
+)
+const escapedEnv = run(['--env-file', 'escaped.env', '-e', 'console.log("escapedMain")'])
+writeResult(escapedEnv)
 
 mkdirSync('node_modules/conditional-preload', { recursive: true })
 writeFileSync(

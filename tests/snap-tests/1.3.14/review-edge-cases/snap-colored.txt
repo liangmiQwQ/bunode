@@ -1,6 +1,7 @@
 evalMeta=[eval]:.:[eval]:true:false:object:function
 evalRuntimeStatus=1
 evalRuntimeOnce=1
+evalHashbangMeta=[eval]:.:1:[eval]:true:false
 printPromiseStatus=0
 printPromiseLooksNode=true
 [eval]:true:false
@@ -12,6 +13,8 @@ hashbangMeta=[stdin]:.:1:[stdin]:true:false
 mixedEnvOk
 multiPreload
 multiMain
+escapedPreload
+escapedMain
 conditionalRequire
 conditionalMain
 samePreloadCount=2

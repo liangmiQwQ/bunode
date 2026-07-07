@@ -178,7 +178,7 @@ fn build_eval_expression(code: &OsStr) -> std::ffi::OsString {
   let globals = node_globals_setup("[eval]");
 
   std::ffi::OsString::from(format!(
-    "await(async()=>{{const __bunodeSource={source};let __bunodeScript=true;try{{new Function(__bunodeSource)}}catch(__bunodeError){{if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;__bunodeScript=false}}if(__bunodeScript){{{globals}return globalThis.eval(__bunodeSource)}}const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{{type:\"text/javascript\"}}));try{{await import(__bunodeUrl)}}finally{{URL.revokeObjectURL(__bunodeUrl)}}}})()",
+    "await(async()=>{{const __bunodeStripHashbang=(source)=>{{if(!source.startsWith(\"#!\"))return source;const index=source.indexOf(String.fromCharCode(10));return source.slice(index===-1?source.length:index+1)}};const __bunodeSource={source};let __bunodeScript=true;try{{new Function(__bunodeStripHashbang(__bunodeSource))}}catch(__bunodeError){{if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;__bunodeScript=false}}if(__bunodeScript){{{globals}return globalThis.eval(__bunodeSource)}}const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{{type:\"text/javascript\"}}));try{{await import(__bunodeUrl)}}finally{{URL.revokeObjectURL(__bunodeUrl)}}}})()",
   ))
 }
 

@@ -22,6 +22,7 @@ oxc_span = { workspace = true }
 deno_dotenv = { workspace = true }
 lexopt = { workspace = true }
 semver = { workspace = true }
+textwrap = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]
