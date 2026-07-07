@@ -1,0 +1,42 @@
+{
+  "description": "--print and -p preserve Node-style argument parsing, empty input, and repeat behavior.",
+  "commands": [
+    "node -p",
+    {
+      "command": "node",
+      "args": ["-p"],
+      "stdin": "1 + 2\n"
+    },
+    {
+      "command": "node",
+      "args": ["-p", "-", "arg"],
+      "stdin": "JSON.stringify({ execArgv: process.execArgv, argv: process.argv.slice(1) })\n"
+    },
+    {
+      "command": "node",
+      "args": ["-p", "-"],
+      "stdin": "typeof require\n"
+    },
+    {
+      "command": "node",
+      "args": ["-p"],
+      "stdin": "JSON.stringify({ file: __filename, dir: __dirname })\n"
+    },
+    {
+      "command": "node",
+      "args": ["-p"],
+      "stdin": "var fs=1; var source=2; fs + source\n"
+    },
+    "node large-stdin-driver.js",
+    "node -pe \"1 + 1\"",
+    "node --print=ignored \"\\\"expr\\\"\"",
+    "node -p \"JSON.stringify(process.argv.slice(1))\" a -- b",
+    "node -p \"JSON.stringify(process.argv.slice(1))\" -- -- --",
+    "node -p \"JSON.stringify({ execArgv: process.execArgv, argv: process.argv.slice(1) })\" --conditions custom arg",
+    "node -e \"\"",
+    "node -p \"\"",
+    "node -e \"\\\"eval\\\"\" -p \"\\\"print\\\"\"",
+    "node -p \"\\\"a\\\"\" -p \"\\\"b\\\"\"",
+    "node -p -- script.js --flag"
+  ]
+}

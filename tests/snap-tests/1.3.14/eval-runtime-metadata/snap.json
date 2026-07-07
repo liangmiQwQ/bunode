@@ -1,0 +1,4 @@
+{
+  "description": "--eval exposes Node-style CommonJS globals, reports runtime errors once, and strips hashbangs.",
+  "commands": ["node eval-metadata-driver.js"]
+}

@@ -1,0 +1,5 @@
+conditionalRequire
+conditionalMain
+samePreloadCount=2
+requireWrapperFiles=0
+streamWrapOk

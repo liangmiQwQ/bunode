@@ -1,0 +1,4 @@
+evalMeta=[eval]:.:[eval]:true:false:object:function
+evalRuntimeStatus=1
+evalRuntimeOnce=1
+evalHashbangMeta=[eval]:.:1:[eval]:true:false

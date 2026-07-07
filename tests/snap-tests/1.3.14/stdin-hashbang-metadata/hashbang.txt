@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+const isSyntheticFilename = value => [`/[stdin]`, `\\[stdin]`].some(suffix => value.endsWith(suffix))
+
+var stdinGlobal = 1
+process.stdout.write(`hashbangMeta=${__filename}:${__dirname}:${globalThis.stdinGlobal}:${module.id}:${isSyntheticFilename(module.filename)}:${require.main === module}\n`)

@@ -1,0 +1,7 @@
+printPromiseStatus=0
+printPromiseLooksNode=true
+[eval]:true:false
+printModuleStatus=1
+printModuleRejected=true
+printSyntaxStatus=1
+printSyntaxIsSyntax=true

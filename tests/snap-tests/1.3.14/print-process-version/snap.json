@@ -1,0 +1,4 @@
+{
+  "description": "--print evaluates process.version through the Node-compatible wrapper.",
+  "commands": ["node -p \"process.version\""]
+}

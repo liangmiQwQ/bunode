@@ -1,0 +1,4 @@
+{
+  "description": "Script mode exposes Node-style argv, module metadata, globals, and -- boundary handling.",
+  "commands": ["node script.js --flag value", "node script.js -- --flag"]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "The wrapper can execute eval, print, script file, and stdin entry points.",
+  "commands": [
+    {
+      "command": "node",
+      "args": ["-e", "console.log(\"eval=2\")"]
+    },
+    {
+      "command": "node",
+      "args": ["-p", "\"print=\" + 3"]
+    },
+    {
+      "command": "node",
+      "args": ["script.cjs", "alpha", "--flag"]
+    },
+    {
+      "command": "node",
+      "stdin": "console.log(`stdinArgv=${process.argv.length}`)\n"
+    }
+  ]
+}

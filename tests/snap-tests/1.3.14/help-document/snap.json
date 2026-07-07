@@ -1,0 +1,4 @@
+{
+  "description": "--help prints the wrapper's Node-compatible option and environment reference.",
+  "commands": ["node --help"]
+}

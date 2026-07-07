@@ -1,0 +1,4 @@
+{
+  "description": "--version wins over later flags and prints the Node-compatible version string.",
+  "commands": ["node --version", "node --version --help", "node --help --version"]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Stdin mode handles empty operands, CommonJS source, and ESM source from standard input.",
+  "commands": [
+    "node",
+    "node -",
+    {
+      "command": "node",
+      "stdinFile": "stdin-script.txt"
+    },
+    {
+      "command": "node",
+      "args": ["", "arg"],
+      "stdinFile": "stdin-script.txt"
+    },
+    {
+      "command": "node",
+      "args": ["-"],
+      "stdinFile": "stdin-module.txt"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+eval=2
+print=3
+script=script.cjs|alpha|--flag
+stdinArgv=1

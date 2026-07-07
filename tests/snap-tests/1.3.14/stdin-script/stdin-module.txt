@@ -1,0 +1,4 @@
+import { readFileSync } from 'node:fs'
+
+const value = await Promise.resolve('ready')
+process.stdout.write(`esmStdin=${typeof readFileSync}:${value}\n`)

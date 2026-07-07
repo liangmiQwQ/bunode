@@ -1,0 +1,39 @@
+{
+  "description": "--require resolves conditional packages, duplicate preloads, and Node built-in aliases.",
+  "commands": [
+    {
+      "command": "node",
+      "args": [
+        "-e",
+        "const { mkdirSync, rmSync } = require('node:fs'); rmSync('tmp', { recursive: true, force: true }); mkdirSync('tmp')"
+      ]
+    },
+    "node --require conditional-preload -e \"console.log('conditionalMain')\"",
+    {
+      "command": "node",
+      "args": [
+        "--require",
+        "./same-preload-a.cjs",
+        "--require",
+        "./same-preload-b.cjs",
+        "-e",
+        "console.log(`samePreloadCount=${globalThis.samePreloadCount}`)"
+      ],
+      "env": {
+        "TMPDIR": "./tmp",
+        "TMP": "./tmp",
+        "TEMP": "./tmp"
+      }
+    },
+    {
+      "command": "node",
+      "args": [
+        "-e",
+        "const { readdirSync } = require('node:fs'); console.log(`requireWrapperFiles=${readdirSync('.').filter(fileName => fileName.startsWith('bunode-require-preload-')).length}`)"
+      ],
+      "cwd": "tmp"
+    },
+    "node --require _stream_wrap -e \"console.log('streamWrapOk')\""
+  ],
+  "after": ["node -e \"require('node:fs').rmSync('tmp', { recursive: true, force: true })\""]
+}
