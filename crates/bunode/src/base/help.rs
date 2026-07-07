@@ -4,8 +4,8 @@ use textwrap::{Options, WordSplitter, wrap};
 
 use super::options::{HelpRow, HelpSection, OptionShape};
 
-const HELP_WIDTH: usize = 80;
-const LEFT_WIDTH: usize = 34;
+const HELP_WIDTH: usize = 90;
+const LEFT_WIDTH: usize = 32;
 const ROW_INDENT: &str = "  ";
 const NODE_SPECIAL_ROWS: &[HelpRow] = &[
   HelpRow {
@@ -28,8 +28,6 @@ const ENVIRONMENT_ROWS: &[HelpRow] = &[
 ];
 
 pub fn print(shape: &OptionShape) {
-  println!("Bunode is a Node.js-compatible wrapper that runs programs on Bun.");
-  println!();
   println!("Usage: node [options] [ script.js ] [arguments]");
   println!();
   println!("Options:");
@@ -41,6 +39,9 @@ pub fn print(shape: &OptionShape) {
   println!();
   println!("Environment variables:");
   print_rows(ENVIRONMENT_ROWS);
+  println!();
+  println!("tip: You are using Bunode, a Node.js-compatible wrapper that runs programs on Bun.");
+  println!("     It means the options and APIs may have some differences.");
 }
 
 fn print_option_section(shape: &OptionShape, section: HelpSection) {
