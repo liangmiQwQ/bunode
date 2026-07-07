@@ -8,7 +8,7 @@ use lexopt::Arg;
 use crate::error::{BunodeError, CliUsageError};
 
 use super::{
-  builtins, data_url, env_file,
+  builtins, env_file,
   options::{HelpSection, OptionShape, OptionSpec, ValueMode, find_long_option, find_short_option},
 };
 
@@ -447,7 +447,7 @@ fn apply_option(
       state.print_operand_mode = PrintOperandMode::Expression;
     }
     "--require" | "-r" => push_common_js_preload(builder, required_option_value(value, option)?),
-    "--import" => push_es_module_preload(builder, required_option_value(value, option)?),
+    "--import" => push_es_module_preload(builder, required_option_value(value, option)?)?,
     "--inspect" => push_optional_forward(builder, "--inspect", value, Some("127.0.0.1:9229")),
     "--inspect-brk" => {
       push_optional_forward(builder, "--inspect-brk", value, Some("127.0.0.1:9229"));
@@ -521,10 +521,23 @@ fn push_common_js_preload(builder: &mut BunArgsBuilder, value: OsString) {
   }
 }
 
-fn push_es_module_preload(builder: &mut BunArgsBuilder, value: OsString) {
+fn push_es_module_preload(
+  builder: &mut BunArgsBuilder,
+  value: OsString,
+) -> Result<(), BunodeError> {
+  if is_data_specifier(&value.to_string_lossy()) {
+    return Err(CliUsageError::UnsupportedDataUrlImport.into());
+  }
+
   if !builtins::is_builtin_module(&value.to_string_lossy()) {
     builder.es_module_preloads.push(value);
   }
+
+  Ok(())
+}
+
+fn is_data_specifier(value: &str) -> bool {
+  value.split_once(':').is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("data"))
 }
 
 fn push_forward_flag(builder: &mut BunArgsBuilder, name: &str) {
@@ -683,12 +696,10 @@ impl ParseState {
     let (command, script_operand_count) = self.command(&mut builder)?;
     let script_arguments =
       self.operands.iter().skip(script_operand_count).cloned().collect::<Vec<_>>();
-    let should_materialize_preloads = !matches!(command, NodeCommand::Help | NodeCommand::Version);
     let mut bun_options = builder.bun_options;
     let env_file_node_options = self.env_file_node_options;
 
-    bun_options
-      .extend(resolve_es_module_preloads(builder.es_module_preloads, should_materialize_preloads)?);
+    bun_options.extend(resolve_es_module_preloads(builder.es_module_preloads));
     bun_options.extend(builder.bun_preloads);
 
     Ok((
@@ -769,24 +780,14 @@ impl ParseState {
   }
 }
 
-fn resolve_es_module_preloads(
-  values: Vec<OsString>,
-  should_materialize: bool,
-) -> Result<Vec<OsString>, BunodeError> {
+fn resolve_es_module_preloads(values: Vec<OsString>) -> Vec<OsString> {
   let mut preloads = Vec::with_capacity(values.len());
 
   for value in values {
-    if should_materialize
-      && let Some(path) = data_url::materialize_javascript_module(&value.to_string_lossy())?
-    {
-      preloads.push(join_option_value("--preload", path.into_os_string()));
-      continue;
-    }
-
     preloads.push(join_option_value("--preload", value));
   }
 
-  Ok(preloads)
+  preloads
 }
 
 #[cfg(test)]
@@ -1187,31 +1188,12 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_materialize_data_url_imports() -> Result<(), crate::error::BunodeError> {
-    let options =
-      parse_cli(&["node", "--import", "data:text/javascript,globalThis.loaded%3D1", "-e", "0"])?;
-    let Some(preload) = options.bun_options.first() else {
-      panic!("data import should produce a Bun preload");
-    };
-    let preload = preload.to_string_lossy();
-    let path = preload.strip_prefix("--preload=").expect("data import should become preload");
+  fn parse_should_reject_data_url_imports() {
+    let error =
+      parse_cli(&["node", "--import", "DATA:text/javascript,globalThis.loaded=1", "-e", "0"])
+        .unwrap_err();
 
-    assert!(std::fs::read_to_string(path).unwrap().contains("URL.createObjectURL"));
-
-    Ok(())
-  }
-
-  #[test]
-  fn parse_should_defer_data_url_import_errors_for_version() -> Result<(), crate::error::BunodeError>
-  {
-    let options = parse_with_node_options(
-      &["node", "--import", "data:text/javascript,%GG", "--version"],
-      "--import data:text/javascript,%GG",
-    )?;
-
-    assert_eq!(options.command, NodeCommand::Version);
-
-    Ok(())
+    assert_eq!(error.to_string(), "data URL imports passed to --import are not supported");
   }
 
   #[test]

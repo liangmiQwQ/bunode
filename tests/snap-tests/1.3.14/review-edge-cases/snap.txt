@@ -17,5 +17,5 @@ conditionalMain
 samePreloadCount=2
 requireWrapperFiles=0
 streamWrapOk
-dataRelativeStatus=1
-dataRelativeRejected=true
+dataImportStatus=9
+dataImportUnsupported=true

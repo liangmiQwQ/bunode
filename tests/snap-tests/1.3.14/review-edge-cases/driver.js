@@ -139,15 +139,8 @@ try {
 const streamWrap = run(['--require', '_stream_wrap', '-e', 'console.log("streamWrapOk")'])
 writeResult(streamWrap)
 
-const temporaryRelative = join(tmpdir(), 'x.js')
-writeFileSync(temporaryRelative, 'globalThis.relativeLoaded = 1\n')
-const dataSource = 'import "./x.js"; globalThis.relativeLoaded = 2'
-const dataRelative = run([
-  '--import',
-  `data:text/javascript,${encodeURIComponent(dataSource)}`,
-  '-e',
-  'console.log("dataMain")'
-])
-process.stdout.write(`dataRelativeStatus=${dataRelative.status}\n`)
-process.stdout.write(`dataRelativeRejected=${dataRelative.stderr.includes('blob:')}\n`)
-rmSync(temporaryRelative, { force: true })
+const dataImport = run(['--import', 'data:text/javascript,globalThis.dataLoaded=1', '-e', '0'])
+process.stdout.write(`dataImportStatus=${dataImport.status}\n`)
+process.stdout.write(
+  `dataImportUnsupported=${dataImport.stderr.includes('data URL imports passed to --import are not supported')}\n`
+)

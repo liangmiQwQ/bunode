@@ -2,5 +2,7 @@ cjs
 esm
 cjs
 builtin
-1
-2
+lowerDataImportStatus=9
+lowerDataImportUnsupported=true
+upperDataImportStatus=9
+upperDataImportUnsupported=true

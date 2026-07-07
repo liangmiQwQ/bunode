@@ -4,7 +4,6 @@ pub mod argv;
 pub mod help;
 
 mod builtins;
-mod data_url;
 mod env_file;
 mod options;
 mod parser;

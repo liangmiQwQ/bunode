@@ -68,14 +68,8 @@ pub enum CliUsageError {
   #[error("unterminated quoted value in env file")]
   UnterminatedEnvFileValue,
 
-  #[error("invalid data URL passed to --import")]
-  InvalidDataUrlImport,
-
-  #[error("invalid base64 payload in data URL import")]
-  InvalidDataUrlBase64Payload,
-
-  #[error("invalid percent escape in data URL import")]
-  InvalidDataUrlPercentEscape,
+  #[error("data URL imports passed to --import are not supported")]
+  UnsupportedDataUrlImport,
 
   #[error(
     "`node inspect` is not supported because Bun does not provide Node's built-in CLI debugger.\nUse `node --inspect` / `node --inspect-brk` compatible flags instead."
@@ -94,9 +88,6 @@ pub enum CliFailureError {
     #[source]
     source: io::Error,
   },
-
-  #[error("failed to prepare data URL import: {0}")]
-  PrepareDataUrlImport(#[source] io::Error),
 }
 
 impl BunodeError {

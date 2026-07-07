@@ -123,7 +123,7 @@ The preload can be injected with `bun --preload`, the preload JavaScript file wi
 For eval, print, stdin and script modes, Bunode injects the preload before CLI user preloads translated from `--require`, `--import`, and `--bun-preload`, so corrected process metadata is visible to normal user code. Bun project `bunfig.toml` preloads run before CLI runtime preloads in Bun itself and cannot be reordered by the wrapper without changing cwd/config lookup behavior, so they may observe raw Bun metadata. TTY REPL mode is delegated to `bun repl` without the metadata preload because Bun's REPL does not execute runtime preloads through the same entrypoint; this is acceptable because direct REPL usage is human-facing and already listed as best-effort behavior.
 Node builtin module specifiers passed to `--require` or `--import` are kept in `process.execArgv` when they came from CLI mode before the script operand, but are not translated to Bun `--preload`, because Bun expects preload values to resolve as files.
 CommonJS `--require` specifiers are translated to generated wrapper preloads that call `createRequire` from the caller's current working directory, so package conditional exports and relative preloads use Node's CommonJS resolution branch instead of Bun's ESM preload resolution.
-JavaScript `data:` imports are decoded into a generated preload wrapper that imports the source through an in-memory Blob URL. This gives Bun a file it can preload without giving the user module an accidental temp-directory base for relative imports.
+JavaScript `data:` module specifiers passed to `--import` are not supported because Bun's preload surface does not implement Node's data URL preload semantics.
 
 ### Help document
 
