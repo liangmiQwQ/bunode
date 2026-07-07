@@ -5,7 +5,7 @@ use std::path::Path;
 
 use lexopt::Arg;
 
-use crate::error::CliError;
+use crate::error::{BunodeError, CliUsageError};
 
 use super::{
   builtins, data_url, env_file,
@@ -93,7 +93,7 @@ pub fn parse<I, T>(
   args: I,
   node_options: Option<OsString>,
   shape: &OptionShape,
-) -> Result<ExecutionPlan, CliError>
+) -> Result<ExecutionPlan, BunodeError>
 where
   I: IntoIterator<Item = T>,
   T: Into<OsString>,
@@ -119,7 +119,7 @@ fn parse_once(
   node_options: Option<OsString>,
   shape: &OptionShape,
   read_env_file_node_options: bool,
-) -> Result<(ExecutionPlan, Option<OsString>), CliError> {
+) -> Result<(ExecutionPlan, Option<OsString>), BunodeError> {
   // 1. Keep argv0 for process.argv0 correction in the generated preload.
   let argv0 = args.first().cloned().unwrap_or_else(|| OsString::from("node"));
   let mut state = ParseState { read_env_file_node_options, ..ParseState::default() };
@@ -149,7 +149,7 @@ fn parse_tokens(
   state: &mut ParseState,
   builder: &mut BunArgsBuilder,
   shape: &OptionShape,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   let mut parser = lexopt::Parser::from_args(tokens.iter().cloned());
   parser.set_short_equals(false);
 
@@ -158,7 +158,9 @@ fn parse_tokens(
       break;
     }
 
-    let Some(argument) = parser.next().map_err(|error| CliError::new(error.to_string()))? else {
+    let Some(argument) =
+      parser.next().map_err(|error| CliUsageError::ArgumentParse(error.to_string()))?
+    else {
       break;
     };
 
@@ -186,7 +188,7 @@ fn parse_long_option(
   state: &mut ParseState,
   builder: &mut BunArgsBuilder,
   shape: &OptionShape,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   let name = format!("--{name}");
   let Some(spec) = find_long_option(shape, &name) else {
     return Err(unsupported_option(&name));
@@ -205,7 +207,7 @@ fn parse_short_option(
   state: &mut ParseState,
   builder: &mut BunArgsBuilder,
   shape: &OptionShape,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   let attached_value = parser.optional_value();
 
   if short == 'p' && attached_value.as_ref().is_some_and(|value| value == OsStr::new("e")) {
@@ -244,7 +246,7 @@ fn parse_print_eval_shortcut(
   state: &mut ParseState,
   builder: &mut BunArgsBuilder,
   shape: &OptionShape,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   let print_spec = find_short_option(shape, 'p').ok_or_else(|| unsupported_option("-p"))?;
   let eval_spec = find_short_option(shape, 'e').ok_or_else(|| unsupported_option("-e"))?;
   ensure_source_allowed(print_spec, source)?;
@@ -268,7 +270,7 @@ fn consume_double_dash(
   parser: &mut lexopt::Parser,
   source: Source,
   state: &mut ParseState,
-) -> Result<bool, CliError> {
+) -> Result<bool, BunodeError> {
   let Some(mut raw_args) = parser.try_raw_args() else {
     return Ok(false);
   };
@@ -278,7 +280,7 @@ fn consume_double_dash(
   }
 
   if source == Source::NodeOptions {
-    return Err(CliError::new("`--` is not allowed in NODE_OPTIONS"));
+    return Err(CliUsageError::NodeOptionsDisallowed("--".to_string()).into());
   }
 
   let _ = raw_args.next();
@@ -294,17 +296,16 @@ fn parse_operand(
   source: Source,
   state: &mut ParseState,
   builder: &mut BunArgsBuilder,
-) -> Result<bool, CliError> {
+) -> Result<bool, BunodeError> {
   if source == Source::NodeOptions {
-    return Err(CliError::new(format!(
-      "`{}` is not allowed in NODE_OPTIONS",
-      value.to_string_lossy(),
-    )));
+    return Err(CliUsageError::NodeOptionsDisallowed(value.to_string_lossy().into_owned()).into());
   }
 
   if value == OsStr::new("-") && state.should_capture_print_expression(source) {
     state.operands.push(value);
-    state.operands.extend(parser.raw_args().map_err(|error| CliError::new(error.to_string()))?);
+    state
+      .operands
+      .extend(parser.raw_args().map_err(|error| CliUsageError::ArgumentParse(error.to_string()))?);
     return Ok(true);
   }
 
@@ -316,7 +317,9 @@ fn parse_operand(
   }
 
   state.operands.push(value);
-  state.operands.extend(parser.raw_args().map_err(|error| CliError::new(error.to_string()))?);
+  state
+    .operands
+    .extend(parser.raw_args().map_err(|error| CliUsageError::ArgumentParse(error.to_string()))?);
 
   Ok(true)
 }
@@ -325,7 +328,7 @@ fn parse_long_value(
   spec: &OptionSpec,
   parser: &mut lexopt::Parser,
   option: &str,
-) -> Result<(Option<OsString>, Vec<OsString>), CliError> {
+) -> Result<(Option<OsString>, Vec<OsString>), BunodeError> {
   let inline_value = parser.optional_value();
   let mut original = vec![format_long_original(option, inline_value.as_deref())];
 
@@ -336,7 +339,7 @@ fn parse_long_value(
   let value = match spec.value {
     ValueMode::None => {
       if inline_value.is_some() {
-        return Err(CliError::new(format!("option `{option}` does not take a value")));
+        return Err(CliUsageError::OptionDoesNotTakeValue(option.to_string()).into());
       }
 
       None
@@ -344,7 +347,7 @@ fn parse_long_value(
     ValueMode::Required => {
       let value = if let Some(value) = inline_value {
         if value.is_empty() {
-          return Err(CliError::new(format!("option `{option}` requires a value")));
+          return Err(option_requires_value(option));
         }
 
         value
@@ -359,7 +362,7 @@ fn parse_long_value(
     ValueMode::OptionalEquals => match inline_value {
       Some(value) => {
         if value.is_empty() {
-          return Err(CliError::new(format!("option `{option}` requires a value")));
+          return Err(option_requires_value(option));
         }
 
         Some(value)
@@ -371,17 +374,18 @@ fn parse_long_value(
   Ok((value, original))
 }
 
-fn required_next_value(parser: &mut lexopt::Parser, option: &str) -> Result<OsString, CliError> {
-  let mut raw_args = parser.raw_args().map_err(|error| CliError::new(error.to_string()))?;
+fn required_next_value(parser: &mut lexopt::Parser, option: &str) -> Result<OsString, BunodeError> {
+  let mut raw_args =
+    parser.raw_args().map_err(|error| CliUsageError::ArgumentParse(error.to_string()))?;
   let Some(value) = raw_args.peek() else {
-    return Err(CliError::new(format!("option `{option}` requires a value")));
+    return Err(option_requires_value(option));
   };
 
   if starts_with_dash(value) {
-    return Err(CliError::new(format!("option `{option}` requires a value")));
+    return Err(option_requires_value(option));
   }
 
-  raw_args.next().ok_or_else(|| CliError::new(format!("option `{option}` requires a value")))
+  raw_args.next().ok_or_else(|| option_requires_value(option))
 }
 
 fn format_long_original(option: &str, value: Option<&OsStr>) -> OsString {
@@ -414,7 +418,7 @@ fn apply_option(
   original: Vec<OsString>,
   state: &mut ParseState,
   builder: &mut BunArgsBuilder,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   ensure_source_allowed(spec, source)?;
 
   if state.print_mode == PrintMode::Enabled && !matches!(option, "--print" | "-p") {
@@ -494,17 +498,21 @@ fn apply_option(
   Ok(())
 }
 
-fn ensure_source_allowed(spec: &OptionSpec, source: Source) -> Result<(), CliError> {
+fn ensure_source_allowed(spec: &OptionSpec, source: Source) -> Result<(), BunodeError> {
   if source == Source::NodeOptions && !spec.node_options_allowed {
     let name = spec.long.first().copied().unwrap_or("option");
-    return Err(CliError::new(format!("`{name}` is not allowed in NODE_OPTIONS")));
+    return Err(CliUsageError::NodeOptionsDisallowed(name.to_string()).into());
   }
 
   Ok(())
 }
 
-fn required_option_value(value: Option<OsString>, option: &str) -> Result<OsString, CliError> {
-  value.ok_or_else(|| CliError::new(format!("option `{option}` requires a value")))
+fn required_option_value(value: Option<OsString>, option: &str) -> Result<OsString, BunodeError> {
+  value.ok_or_else(|| option_requires_value(option))
+}
+
+fn option_requires_value(option: &str) -> BunodeError {
+  CliUsageError::OptionRequiresValue(option.to_string()).into()
 }
 
 fn push_common_js_preload(builder: &mut BunArgsBuilder, value: OsString) {
@@ -528,7 +536,7 @@ fn push_forward_value(
   name: &str,
   value: Option<OsString>,
   option: &str,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   builder.bun_options.push(join_option_value(name, required_option_value(value, option)?));
 
   Ok(())
@@ -553,7 +561,7 @@ fn push_node_env_file(
   value: Option<OsString>,
   option: &str,
   source: Source,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   let value = required_option_value(value, option)?;
   validate_env_file(&value)?;
 
@@ -573,7 +581,7 @@ fn push_bun_env_file(
   builder: &mut BunArgsBuilder,
   value: Option<OsString>,
   option: &str,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   let value = required_option_value(value, option)?;
   validate_env_file(&value)?;
   builder.bun_options.push(join_option_value("--env-file", value));
@@ -585,7 +593,7 @@ fn push_bun_preload(
   builder: &mut BunArgsBuilder,
   value: Option<OsString>,
   option: &str,
-) -> Result<(), CliError> {
+) -> Result<(), BunodeError> {
   builder.bun_preloads.push(join_option_value("--preload", required_option_value(value, option)?));
 
   Ok(())
@@ -598,21 +606,21 @@ fn join_option_value(name: &str, value: OsString) -> OsString {
   option
 }
 
-fn validate_env_file(path: &OsStr) -> Result<(), CliError> {
+fn validate_env_file(path: &OsStr) -> Result<(), BunodeError> {
   let path = Path::new(path);
 
   if path.is_file() {
     return Ok(());
   }
 
-  Err(CliError::new(format!("{}: not found", path.display())))
+  Err(CliUsageError::FileNotFound(path.to_path_buf()).into())
 }
 
-fn unsupported_option(option: impl AsRef<OsStr>) -> CliError {
-  CliError::new(format!("unsupported Node.js option `{}`", option.as_ref().to_string_lossy()))
+fn unsupported_option(option: impl AsRef<OsStr>) -> BunodeError {
+  CliUsageError::UnsupportedNodeOption(option.as_ref().to_string_lossy().into_owned()).into()
 }
 
-fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, CliError> {
+fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, BunodeError> {
   let value = value.to_string_lossy();
   let mut result = Vec::new();
   let mut current = String::new();
@@ -650,7 +658,7 @@ fn split_node_options(value: &OsStr) -> Result<Vec<OsString>, CliError> {
   }
 
   if quote.is_some() {
-    return Err(CliError::new("unterminated quote in NODE_OPTIONS"));
+    return Err(CliUsageError::UnterminatedNodeOptionsQuote.into());
   }
 
   if !current.is_empty() {
@@ -671,7 +679,7 @@ impl ParseState {
     self,
     argv0: OsString,
     mut builder: BunArgsBuilder,
-  ) -> Result<(ExecutionPlan, Option<OsString>), CliError> {
+  ) -> Result<(ExecutionPlan, Option<OsString>), BunodeError> {
     let (command, script_operand_count) = self.command(&mut builder)?;
     let script_arguments =
       self.operands.iter().skip(script_operand_count).cloned().collect::<Vec<_>>();
@@ -696,7 +704,7 @@ impl ParseState {
     ))
   }
 
-  fn command(&self, builder: &mut BunArgsBuilder) -> Result<(NodeCommand, usize), CliError> {
+  fn command(&self, builder: &mut BunArgsBuilder) -> Result<(NodeCommand, usize), BunodeError> {
     if self.command_mode == CommandMode::Help {
       return Ok((NodeCommand::Help, 0));
     }
@@ -749,9 +757,7 @@ impl ParseState {
     };
 
     if script == OsStr::new("inspect") {
-      return Err(CliError::new(
-        "`node inspect` is not supported because Bun does not provide Node's built-in CLI debugger.\nUse `node --inspect` / `node --inspect-brk` compatible flags instead.",
-      ));
+      return Err(CliUsageError::UnsupportedNodeInspect.into());
     }
 
     // Node treats an empty script operand like stdin/REPL while preserving it in process.argv.
@@ -766,7 +772,7 @@ impl ParseState {
 fn resolve_es_module_preloads(
   values: Vec<OsString>,
   should_materialize: bool,
-) -> Result<Vec<OsString>, CliError> {
+) -> Result<Vec<OsString>, BunodeError> {
   let mut preloads = Vec::with_capacity(values.len());
 
   for value in values {
@@ -793,7 +799,7 @@ mod tests {
 
   use super::parse;
 
-  fn parse_cli(args: &[&str]) -> Result<ExecutionPlan, crate::error::CliError> {
+  fn parse_cli(args: &[&str]) -> Result<ExecutionPlan, crate::error::BunodeError> {
     let shape = super::super::options::option_shape_for_bun(&Version::new(1, 3, 14));
 
     parse(args, None, &shape)
@@ -802,7 +808,7 @@ mod tests {
   fn parse_with_node_options(
     args: &[&str],
     node_options: &str,
-  ) -> Result<ExecutionPlan, crate::error::CliError> {
+  ) -> Result<ExecutionPlan, crate::error::BunodeError> {
     let shape = super::super::options::option_shape_for_bun(&Version::new(1, 3, 14));
 
     parse(args, Some(OsString::from(node_options)), &shape)
@@ -815,8 +821,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_keep_script_arguments_after_script_operand() -> Result<(), crate::error::CliError>
-  {
+  fn parse_should_keep_script_arguments_after_script_operand()
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "--inspect", "script.js", "--help", "--flag"])?;
 
     assert_eq!(
@@ -835,7 +841,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_keep_inspect_value_before_script_operand() -> Result<(), crate::error::CliError> {
+  fn parse_should_keep_inspect_value_before_script_operand() -> Result<(), crate::error::BunodeError>
+  {
     let options = parse_cli(&["node", "--inspect=127.0.0.1:9229", "script.js"])?;
 
     assert_eq!(
@@ -854,8 +861,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_treat_double_dash_as_end_of_bunode_options() -> Result<(), crate::error::CliError>
-  {
+  fn parse_should_treat_double_dash_as_end_of_bunode_options()
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "--", "--script.js", "--help"])?;
 
     assert_eq!(
@@ -875,7 +882,7 @@ mod tests {
 
   #[test]
   fn parse_should_treat_empty_script_operand_as_stdin_argument()
-  -> Result<(), crate::error::CliError> {
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "--", "", "arg"])?;
 
     assert_eq!(
@@ -894,7 +901,7 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_treat_eval_operands_as_arguments() -> Result<(), crate::error::CliError> {
+  fn parse_should_treat_eval_operands_as_arguments() -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "-p", "process.argv.slice(1)", "first", "--second"])?;
 
     assert_eq!(
@@ -913,7 +920,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_continue_options_after_print_expression() -> Result<(), crate::error::CliError> {
+  fn parse_should_continue_options_after_print_expression() -> Result<(), crate::error::BunodeError>
+  {
     let options =
       parse_cli(&["node", "-p", "process.argv.slice(1)", "--conditions=custom", "first"])?;
 
@@ -938,7 +946,7 @@ mod tests {
 
   #[test]
   fn parse_should_let_later_print_operand_replace_earlier_inline_command()
-  -> Result<(), crate::error::CliError> {
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "-e", "\"eval\"", "-p", "\"print\""])?;
 
     assert_eq!(options.command, NodeCommand::Print(OsString::from("\"print\"")));
@@ -951,7 +959,7 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_prefer_version_over_help() -> Result<(), crate::error::CliError> {
+  fn parse_should_prefer_version_over_help() -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "--help", "--version"])?;
 
     assert_eq!(options.command, NodeCommand::Version);
@@ -964,7 +972,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_defer_print_without_expression_to_stdin() -> Result<(), crate::error::CliError> {
+  fn parse_should_defer_print_without_expression_to_stdin() -> Result<(), crate::error::BunodeError>
+  {
     let options = parse_cli(&["node", "-p"])?;
 
     assert_eq!(options.command, NodeCommand::PrintStdin);
@@ -974,8 +983,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_treat_dash_print_operand_as_stdin_argument() -> Result<(), crate::error::CliError>
-  {
+  fn parse_should_treat_dash_print_operand_as_stdin_argument()
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "-p", "-", "arg"])?;
 
     assert_eq!(
@@ -994,7 +1003,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_treat_print_after_double_dash_as_script() -> Result<(), crate::error::CliError> {
+  fn parse_should_treat_print_after_double_dash_as_script() -> Result<(), crate::error::BunodeError>
+  {
     let options = parse_cli(&["node", "-p", "--", "script.js", "--flag"])?;
 
     assert_eq!(
@@ -1013,8 +1023,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_treat_print_operand_after_option_as_script() -> Result<(), crate::error::CliError>
-  {
+  fn parse_should_treat_print_operand_after_option_as_script()
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "-p", "--conditions", "custom", "script.js", "--flag"])?;
 
     assert_eq!(
@@ -1037,7 +1047,7 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_support_print_eval_shortcut() -> Result<(), crate::error::CliError> {
+  fn parse_should_support_print_eval_shortcut() -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "-pe", "1 + 1"])?;
 
     assert_eq!(
@@ -1056,8 +1066,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_translate_node_options_before_cli_options() -> Result<(), crate::error::CliError>
-  {
+  fn parse_should_translate_node_options_before_cli_options()
+  -> Result<(), crate::error::BunodeError> {
     let options =
       parse_with_node_options(&["node", "--conditions", "cli", "script.js"], "--conditions env")?;
 
@@ -1080,49 +1090,49 @@ mod tests {
   fn parse_should_reject_command_options_from_node_options() {
     let error = parse_with_node_options(&["node"], "--eval 1").unwrap_err();
 
-    assert_eq!(error.to_string(), "bunode: `--eval` is not allowed in NODE_OPTIONS");
+    assert_eq!(error.to_string(), "`--eval` is not allowed in NODE_OPTIONS");
   }
 
   #[test]
   fn parse_should_reject_env_file_from_node_options() {
     let error = parse_with_node_options(&["node"], "--env-file .env").unwrap_err();
 
-    assert_eq!(error.to_string(), "bunode: `--env-file` is not allowed in NODE_OPTIONS");
+    assert_eq!(error.to_string(), "`--env-file` is not allowed in NODE_OPTIONS");
   }
 
   #[test]
   fn parse_should_reject_attached_short_values() {
     let error = parse_cli(&["node", "-econsole.log(1)"]).unwrap_err();
 
-    assert_eq!(error.to_string(), "bunode: unsupported Node.js option `-econsole.log(1)`",);
+    assert_eq!(error.to_string(), "unsupported Node.js option `-econsole.log(1)`",);
   }
 
   #[test]
   fn parse_should_reject_short_equals_values() {
     let error = parse_cli(&["node", "-p=e"]).unwrap_err();
 
-    assert_eq!(error.to_string(), "bunode: unsupported Node.js option `-p=e`");
+    assert_eq!(error.to_string(), "unsupported Node.js option `-p=e`");
   }
 
   #[test]
   fn parse_should_reject_missing_option_value_before_next_flag() {
     let error = parse_cli(&["node", "--require", "--eval", "0"]).unwrap_err();
 
-    assert_eq!(error.to_string(), "bunode: option `--require` requires a value");
+    assert_eq!(error.to_string(), "option `--require` requires a value");
   }
 
   #[test]
   fn parse_should_reject_empty_inline_required_value() {
     let error = parse_cli(&["node", "--eval="]).unwrap_err();
 
-    assert_eq!(error.to_string(), "bunode: option `--eval` requires a value");
+    assert_eq!(error.to_string(), "option `--eval` requires a value");
   }
 
   #[test]
   fn parse_should_reject_empty_inline_optional_value() {
     let error = parse_cli(&["node", "--inspect="]).unwrap_err();
 
-    assert_eq!(error.to_string(), "bunode: option `--inspect` requires a value");
+    assert_eq!(error.to_string(), "option `--inspect` requires a value");
   }
 
   #[test]
@@ -1130,11 +1140,11 @@ mod tests {
     let error =
       parse_cli(&["node", "--env-file", "missing-bunode-env-file.env", "--version"]).unwrap_err();
 
-    assert_eq!(error.to_string(), "bunode: missing-bunode-env-file.env: not found");
+    assert_eq!(error.to_string(), "missing-bunode-env-file.env: not found");
   }
 
   #[test]
-  fn parse_should_hide_bunode_options_from_exec_argv() -> Result<(), crate::error::CliError> {
+  fn parse_should_hide_bunode_options_from_exec_argv() -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "--bun-smol", "--conditions", "cli", "-e", "0"])?;
 
     assert_eq!(
@@ -1152,7 +1162,7 @@ mod tests {
 
   #[test]
   fn parse_should_run_common_js_preloads_before_es_module_imports()
-  -> Result<(), crate::error::CliError> {
+  -> Result<(), crate::error::BunodeError> {
     let options =
       parse_cli(&["node", "--import", "./esm.mjs", "--require", "./cjs.cjs", "-e", "0"])?;
 
@@ -1164,7 +1174,7 @@ mod tests {
 
   #[test]
   fn parse_should_run_node_options_preloads_before_bun_preloads()
-  -> Result<(), crate::error::CliError> {
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_with_node_options(
       &["node", "--bun-preload", "./cli.js", "-e", "0"],
       "--require ./env.cjs",
@@ -1177,7 +1187,7 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_materialize_data_url_imports() -> Result<(), crate::error::CliError> {
+  fn parse_should_materialize_data_url_imports() -> Result<(), crate::error::BunodeError> {
     let options =
       parse_cli(&["node", "--import", "data:text/javascript,globalThis.loaded%3D1", "-e", "0"])?;
     let Some(preload) = options.bun_options.first() else {
@@ -1192,7 +1202,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_defer_data_url_import_errors_for_version() -> Result<(), crate::error::CliError> {
+  fn parse_should_defer_data_url_import_errors_for_version() -> Result<(), crate::error::BunodeError>
+  {
     let options = parse_with_node_options(
       &["node", "--import", "data:text/javascript,%GG", "--version"],
       "--import data:text/javascript,%GG",
@@ -1204,7 +1215,7 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_skip_builtin_preloads() -> Result<(), crate::error::CliError> {
+  fn parse_should_skip_builtin_preloads() -> Result<(), crate::error::BunodeError> {
     let options = parse_cli(&["node", "--import", "node:fs", "--require", "fs", "-e", "0"])?;
 
     assert_eq!(
@@ -1225,7 +1236,7 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_translate_node_options_from_env_file() -> Result<(), crate::error::CliError> {
+  fn parse_should_translate_node_options_from_env_file() -> Result<(), crate::error::BunodeError> {
     let path = std::env::temp_dir().join(format!(
       "bunode-node-options-{}-{}.env",
       std::process::id(),
@@ -1254,7 +1265,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_not_read_node_options_from_bun_env_file() -> Result<(), crate::error::CliError> {
+  fn parse_should_not_read_node_options_from_bun_env_file() -> Result<(), crate::error::BunodeError>
+  {
     let path = std::env::temp_dir().join(format!(
       "bunode-bun-env-file-{}-{}.env",
       std::process::id(),
@@ -1276,7 +1288,7 @@ mod tests {
 
   #[test]
   fn parse_should_not_read_env_file_node_options_when_real_node_options_exists()
-  -> Result<(), crate::error::CliError> {
+  -> Result<(), crate::error::BunodeError> {
     let path = std::env::temp_dir().join(format!(
       "bunode-real-node-options-{}-{}.env",
       std::process::id(),
@@ -1301,7 +1313,7 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_keep_double_quoted_node_options_value() -> Result<(), crate::error::CliError> {
+  fn parse_should_keep_double_quoted_node_options_value() -> Result<(), crate::error::BunodeError> {
     let options = parse_with_node_options(&["node", "-e", "0"], "--require \"./with space.js\"")?;
 
     assert_eq!(options.bun_options, Vec::<OsString>::new());
@@ -1311,8 +1323,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_keep_single_quotes_as_node_options_literal() -> Result<(), crate::error::CliError>
-  {
+  fn parse_should_keep_single_quotes_as_node_options_literal()
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_with_node_options(&["node", "-e", "0"], "--require './preload.js'")?;
 
     assert_eq!(options.bun_options, Vec::<OsString>::new());
@@ -1322,7 +1334,7 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_preserve_node_options_backslashes() -> Result<(), crate::error::CliError> {
+  fn parse_should_preserve_node_options_backslashes() -> Result<(), crate::error::BunodeError> {
     let options = parse_with_node_options(&["node", "-e", "0"], r"--require C:\tmp\preload.js")?;
 
     assert_eq!(options.bun_options, Vec::<OsString>::new());
@@ -1332,8 +1344,8 @@ mod tests {
   }
 
   #[test]
-  fn parse_should_keep_escaped_double_quote_in_node_options() -> Result<(), crate::error::CliError>
-  {
+  fn parse_should_keep_escaped_double_quote_in_node_options()
+  -> Result<(), crate::error::BunodeError> {
     let options = parse_with_node_options(&["node", "-e", "0"], r#"--require "./x\" y.js""#)?;
 
     assert_eq!(options.bun_options, Vec::<OsString>::new());

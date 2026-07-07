@@ -2,23 +2,23 @@
 
 use std::{ffi::OsString, fs, path::Path};
 
-use crate::error::CliError;
+use crate::error::{BunodeError, CliFailureError, CliUsageError};
 
-pub(super) fn read_node_options(path: &std::ffi::OsStr) -> Result<Option<OsString>, CliError> {
+pub(super) fn read_node_options(path: &std::ffi::OsStr) -> Result<Option<OsString>, BunodeError> {
   let path = Path::new(path);
 
   if !path.is_file() {
-    return Err(CliError::new(format!("{}: not found", path.display())));
+    return Err(CliUsageError::FileNotFound(path.to_path_buf()).into());
   }
 
   let source = fs::read_to_string(path)
-    .map_err(|error| CliError::failure(format!("failed to read {}: {error}", path.display())))?;
+    .map_err(|source| CliFailureError::ReadEnvFile { path: path.to_path_buf(), source })?;
   let node_options = read_node_options_from_source(&source)?;
 
   Ok(node_options.map(OsString::from))
 }
 
-fn read_node_options_from_source(source: &str) -> Result<Option<String>, CliError> {
+fn read_node_options_from_source(source: &str) -> Result<Option<String>, BunodeError> {
   let lines = source.lines().collect::<Vec<_>>();
   let mut index = 0;
   let mut node_options = None;
@@ -59,7 +59,7 @@ fn read_node_options_from_source(source: &str) -> Result<Option<String>, CliErro
 }
 
 #[cfg(test)]
-fn parse_assignment(line: &str) -> Result<Option<(&str, String)>, CliError> {
+fn parse_assignment(line: &str) -> Result<Option<(&str, String)>, BunodeError> {
   let Some((name, value)) = parse_assignment_head(line) else {
     return Ok(None);
   };
@@ -85,7 +85,7 @@ fn parse_assignment_head(line: &str) -> Option<(&str, &str)> {
   Some((name, value))
 }
 
-fn parse_value(value: &str) -> Result<String, CliError> {
+fn parse_value(value: &str) -> Result<String, BunodeError> {
   let value = value.trim();
 
   let value = match value.as_bytes().first() {
@@ -97,7 +97,7 @@ fn parse_value(value: &str) -> Result<String, CliError> {
   Ok(value)
 }
 
-fn parse_quoted_value(value: &str, quote: char) -> Result<String, CliError> {
+fn parse_quoted_value(value: &str, quote: char) -> Result<String, BunodeError> {
   let mut result = String::new();
   let mut characters = value[quote.len_utf8()..].chars().peekable();
 
@@ -115,7 +115,7 @@ fn parse_quoted_value(value: &str, quote: char) -> Result<String, CliError> {
     result.push(character);
   }
 
-  Err(CliError::new("unterminated quoted value in env file"))
+  Err(CliUsageError::UnterminatedEnvFileValue.into())
 }
 
 fn parse_unquoted_value(value: &str) -> String {
@@ -174,7 +174,7 @@ mod tests {
   }
 
   #[test]
-  fn should_ignore_unrelated_malformed_values() -> Result<(), crate::error::CliError> {
+  fn should_ignore_unrelated_malformed_values() -> Result<(), crate::error::BunodeError> {
     let source = "BAD=\"unterminated\nNODE_OPTIONS=\"--conditions from-env\"\n";
 
     assert_eq!(read_node_options_from_source(source)?, Some("--conditions from-env".to_string()));
@@ -183,7 +183,7 @@ mod tests {
   }
 
   #[test]
-  fn should_parse_multiline_node_options_values() -> Result<(), crate::error::CliError> {
+  fn should_parse_multiline_node_options_values() -> Result<(), crate::error::BunodeError> {
     let source = "NODE_OPTIONS=\"--conditions a\n--conditions b\"\n";
 
     assert_eq!(

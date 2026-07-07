@@ -5,7 +5,10 @@ use std::{
   path::Path,
 };
 
-use crate::{base::ExecutionPlan, error::CliError};
+use crate::{
+  base::ExecutionPlan,
+  error::{BunodeError, CliFailureError},
+};
 
 #[derive(Clone, Copy)]
 pub enum BunMode<'a> {
@@ -14,13 +17,14 @@ pub enum BunMode<'a> {
   Repl,
 }
 
-pub fn validate_script(script: &OsStr) -> Result<(), CliError> {
+pub fn validate_script(script: &OsStr) -> Result<(), BunodeError> {
   if script_requires_explicit_relative_path(script) {
-    return Err(CliError::failure(format!(
-      "script `{}` starts with `-`; pass it with an explicit relative path like `./{}`.",
-      script.to_string_lossy(),
-      script.to_string_lossy(),
-    )));
+    return Err(
+      CliFailureError::DashScriptRequiresExplicitRelativePath(
+        script.to_string_lossy().into_owned(),
+      )
+      .into(),
+    );
   }
 
   Ok(())
@@ -293,7 +297,7 @@ mod tests {
 
     assert_eq!(
       error.to_string(),
-      "bunode: script `--script.js` starts with `-`; pass it with an explicit relative path like `./--script.js`.",
+      "script `--script.js` starts with `-`; pass it with an explicit relative path like `./--script.js`.",
     );
   }
 

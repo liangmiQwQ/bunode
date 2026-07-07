@@ -8,9 +8,11 @@ use std::{
   time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::error::CliError;
+use crate::error::{BunodeError, CliFailureError, CliUsageError};
 
-pub(super) fn materialize_javascript_module(specifier: &str) -> Result<Option<PathBuf>, CliError> {
+pub(super) fn materialize_javascript_module(
+  specifier: &str,
+) -> Result<Option<PathBuf>, BunodeError> {
   let Some((scheme, rest)) = specifier.split_once(':') else {
     return Ok(None);
   };
@@ -20,7 +22,7 @@ pub(super) fn materialize_javascript_module(specifier: &str) -> Result<Option<Pa
   }
 
   let Some((metadata, payload)) = rest.split_once(',') else {
-    return Err(CliError::new("invalid data URL passed to --import"));
+    return Err(CliUsageError::InvalidDataUrlImport.into());
   };
   let payload = strip_fragment(payload);
 
@@ -30,8 +32,7 @@ pub(super) fn materialize_javascript_module(specifier: &str) -> Result<Option<Pa
 
   let source = build_blob_import_wrapper(&decode_payload(metadata, payload)?);
   let path = module_path(specifier);
-  write_content_addressed_file(&path, &source)
-    .map_err(|error| CliError::failure(format!("failed to prepare data URL import: {error}")))?;
+  write_content_addressed_file(&path, &source).map_err(CliFailureError::PrepareDataUrlImport)?;
 
   Ok(Some(path))
 }
@@ -43,11 +44,11 @@ fn is_javascript_metadata(metadata: &str) -> bool {
     || media_type.eq_ignore_ascii_case("application/javascript")
 }
 
-fn decode_payload(metadata: &str, payload: &str) -> Result<Vec<u8>, CliError> {
+fn decode_payload(metadata: &str, payload: &str) -> Result<Vec<u8>, BunodeError> {
   if metadata.split(';').any(|part| part.eq_ignore_ascii_case("base64")) {
     let payload = decode_percent(payload)?;
-    let payload = std::str::from_utf8(&payload)
-      .map_err(|_| CliError::new("invalid base64 payload in data URL import"))?;
+    let payload =
+      std::str::from_utf8(&payload).map_err(|_| CliUsageError::InvalidDataUrlBase64Payload)?;
 
     return decode_base64(payload);
   }
@@ -59,7 +60,7 @@ fn strip_fragment(payload: &str) -> &str {
   payload.split_once('#').map_or(payload, |(payload, _)| payload)
 }
 
-fn decode_percent(value: &str) -> Result<Vec<u8>, CliError> {
+fn decode_percent(value: &str) -> Result<Vec<u8>, BunodeError> {
   let mut result = Vec::new();
   let bytes = value.as_bytes();
   let mut index = 0;
@@ -72,12 +73,11 @@ fn decode_percent(value: &str) -> Result<Vec<u8>, CliError> {
     }
 
     let Some(hex) = bytes.get((index + 1)..(index + 3)) else {
-      return Err(CliError::new("invalid percent escape in data URL import"));
+      return Err(CliUsageError::InvalidDataUrlPercentEscape.into());
     };
-    let hex = std::str::from_utf8(hex)
-      .map_err(|_| CliError::new("invalid percent escape in data URL import"))?;
-    let byte = u8::from_str_radix(hex, 16)
-      .map_err(|_| CliError::new("invalid percent escape in data URL import"))?;
+    let hex = std::str::from_utf8(hex).map_err(|_| CliUsageError::InvalidDataUrlPercentEscape)?;
+    let byte =
+      u8::from_str_radix(hex, 16).map_err(|_| CliUsageError::InvalidDataUrlPercentEscape)?;
 
     result.push(byte);
     index += 3;
@@ -86,7 +86,7 @@ fn decode_percent(value: &str) -> Result<Vec<u8>, CliError> {
   Ok(result)
 }
 
-fn decode_base64(value: &str) -> Result<Vec<u8>, CliError> {
+fn decode_base64(value: &str) -> Result<Vec<u8>, BunodeError> {
   validate_base64(value)?;
 
   let mut result = Vec::new();
@@ -99,7 +99,7 @@ fn decode_base64(value: &str) -> Result<Vec<u8>, CliError> {
     }
 
     let Some(value) = base64_value(byte) else {
-      return Err(CliError::new("invalid base64 payload in data URL import"));
+      return Err(CliUsageError::InvalidDataUrlBase64Payload.into());
     };
 
     buffer = (buffer << 6) | u32::from(value);
@@ -159,29 +159,29 @@ fn encode_base64(value: &[u8]) -> String {
   result
 }
 
-fn validate_base64(value: &str) -> Result<(), CliError> {
+fn validate_base64(value: &str) -> Result<(), BunodeError> {
   let bytes = value.bytes().filter(|byte| !byte.is_ascii_whitespace()).collect::<Vec<_>>();
   let padding_start = bytes.iter().position(|byte| *byte == b'=').unwrap_or(bytes.len());
   let padding_count = bytes.len() - padding_start;
   let data_len = padding_start;
 
   if padding_count > 2 || bytes.iter().skip(padding_start).any(|byte| *byte != b'=') {
-    return Err(CliError::new("invalid base64 payload in data URL import"));
+    return Err(CliUsageError::InvalidDataUrlBase64Payload.into());
   }
 
   if data_len % 4 == 1 {
-    return Err(CliError::new("invalid base64 payload in data URL import"));
+    return Err(CliUsageError::InvalidDataUrlBase64Payload.into());
   }
 
   if padding_count > 0 {
     let expected_padding = match data_len % 4 {
       2 => 2,
       3 => 1,
-      _ => return Err(CliError::new("invalid base64 payload in data URL import")),
+      _ => return Err(CliUsageError::InvalidDataUrlBase64Payload.into()),
     };
 
     if padding_count != expected_padding {
-      return Err(CliError::new("invalid base64 payload in data URL import"));
+      return Err(CliUsageError::InvalidDataUrlBase64Payload.into());
     }
   }
 
@@ -276,7 +276,7 @@ mod tests {
   };
 
   #[test]
-  fn should_decode_percent_data_payload() -> Result<(), crate::error::CliError> {
+  fn should_decode_percent_data_payload() -> Result<(), crate::error::BunodeError> {
     let decoded = decode_percent("globalThis.loaded%3D1")?;
 
     assert_eq!(decoded, b"globalThis.loaded=1");
@@ -285,7 +285,7 @@ mod tests {
   }
 
   #[test]
-  fn should_decode_base64_data_payload() -> Result<(), crate::error::CliError> {
+  fn should_decode_base64_data_payload() -> Result<(), crate::error::BunodeError> {
     let decoded = decode_base64("Z2xvYmFsVGhpcy5sb2FkZWQ9MQ==")?;
 
     assert_eq!(decoded, b"globalThis.loaded=1");
@@ -300,7 +300,7 @@ mod tests {
   }
 
   #[test]
-  fn should_percent_decode_base64_data_payload() -> Result<(), crate::error::CliError> {
+  fn should_percent_decode_base64_data_payload() -> Result<(), crate::error::BunodeError> {
     let path = materialize_javascript_module(
       "data:text/javascript;base64,Z2xvYmFsVGhpcy5sb2FkZWQ9MQ%3D%3D",
     )?
@@ -315,7 +315,7 @@ mod tests {
   }
 
   #[test]
-  fn should_materialize_javascript_data_import() -> Result<(), crate::error::CliError> {
+  fn should_materialize_javascript_data_import() -> Result<(), crate::error::BunodeError> {
     let path =
       materialize_javascript_module("data:text/javascript,globalThis.loaded%3D1")?.unwrap();
 
@@ -326,7 +326,7 @@ mod tests {
 
   #[test]
   fn should_materialize_case_insensitive_javascript_data_import()
-  -> Result<(), crate::error::CliError> {
+  -> Result<(), crate::error::BunodeError> {
     let path =
       materialize_javascript_module("data:Text/JavaScript,globalThis.loaded%3D1")?.unwrap();
 
@@ -336,7 +336,7 @@ mod tests {
   }
 
   #[test]
-  fn should_materialize_case_insensitive_data_scheme() -> Result<(), crate::error::CliError> {
+  fn should_materialize_case_insensitive_data_scheme() -> Result<(), crate::error::BunodeError> {
     let path =
       materialize_javascript_module("DATA:text/javascript,globalThis.loaded%3D1")?.unwrap();
 
@@ -354,7 +354,7 @@ mod tests {
   }
 
   #[test]
-  fn should_strip_data_import_fragment() -> Result<(), crate::error::CliError> {
+  fn should_strip_data_import_fragment() -> Result<(), crate::error::BunodeError> {
     let path =
       materialize_javascript_module("data:text/javascript,globalThis.loaded%3D1#cache")?.unwrap();
 
@@ -364,7 +364,7 @@ mod tests {
   }
 
   #[test]
-  fn should_ignore_non_data_imports() -> Result<(), crate::error::CliError> {
+  fn should_ignore_non_data_imports() -> Result<(), crate::error::BunodeError> {
     assert!(materialize_javascript_module("./preload.mjs")?.is_none());
 
     Ok(())

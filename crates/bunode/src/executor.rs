@@ -49,7 +49,7 @@ impl Executor {
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString>,
   {
-    Ok(base::parse(args, env::var_os("NODE_OPTIONS"), &self.shape)?)
+    base::parse(args, env::var_os("NODE_OPTIONS"), &self.shape)
   }
 
   fn run(&self, invocation: &ExecutionPlan) -> Result<ExecutionResult, BunodeError> {

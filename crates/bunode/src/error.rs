@@ -2,31 +2,13 @@ use std::{io, path::PathBuf, process::ExitCode};
 
 use thiserror::Error;
 
-#[derive(Error, Debug, PartialEq, Eq)]
-#[error("bunode: {message}")]
-pub struct CliError {
-  message: String,
-  exit_code: u8,
-}
-
-impl CliError {
-  pub fn new(message: impl Into<String>) -> Self {
-    Self { message: message.into(), exit_code: 9 }
-  }
-
-  pub fn failure(message: impl Into<String>) -> Self {
-    Self { message: message.into(), exit_code: 1 }
-  }
-
-  pub fn exit_code(&self) -> ExitCode {
-    ExitCode::from(self.exit_code)
-  }
-}
-
 #[derive(Error, Debug)]
 pub enum BunodeError {
   #[error(transparent)]
-  Cli(#[from] CliError),
+  CliUsage(#[from] CliUsageError),
+
+  #[error(transparent)]
+  CliFailure(#[from] CliFailureError),
 
   // ---- Finding and execute bun binary ----------------------
   #[error("Error to execute bun binary: {0}")]
@@ -60,18 +42,72 @@ pub enum BunodeError {
   UnsupporttedBunVersion(String),
 }
 
+#[derive(Error, Debug)]
+pub enum CliUsageError {
+  #[error("{0}")]
+  ArgumentParse(String),
+
+  #[error("unsupported Node.js option `{0}`")]
+  UnsupportedNodeOption(String),
+
+  #[error("option `{0}` does not take a value")]
+  OptionDoesNotTakeValue(String),
+
+  #[error("option `{0}` requires a value")]
+  OptionRequiresValue(String),
+
+  #[error("`{0}` is not allowed in NODE_OPTIONS")]
+  NodeOptionsDisallowed(String),
+
+  #[error("{}: not found", .0.display())]
+  FileNotFound(PathBuf),
+
+  #[error("unterminated quote in NODE_OPTIONS")]
+  UnterminatedNodeOptionsQuote,
+
+  #[error("unterminated quoted value in env file")]
+  UnterminatedEnvFileValue,
+
+  #[error("invalid data URL passed to --import")]
+  InvalidDataUrlImport,
+
+  #[error("invalid base64 payload in data URL import")]
+  InvalidDataUrlBase64Payload,
+
+  #[error("invalid percent escape in data URL import")]
+  InvalidDataUrlPercentEscape,
+
+  #[error(
+    "`node inspect` is not supported because Bun does not provide Node's built-in CLI debugger.\nUse `node --inspect` / `node --inspect-brk` compatible flags instead."
+  )]
+  UnsupportedNodeInspect,
+}
+
+#[derive(Error, Debug)]
+pub enum CliFailureError {
+  #[error("script `{0}` starts with `-`; pass it with an explicit relative path like `./{0}`.")]
+  DashScriptRequiresExplicitRelativePath(String),
+
+  #[error("failed to read {}: {source}", path.display())]
+  ReadEnvFile {
+    path: PathBuf,
+    #[source]
+    source: io::Error,
+  },
+
+  #[error("failed to prepare data URL import: {0}")]
+  PrepareDataUrlImport(#[source] io::Error),
+}
+
 impl BunodeError {
   pub fn exit_code(&self) -> ExitCode {
     match self {
-      Self::Cli(error) => error.exit_code(),
+      Self::CliUsage(_) => ExitCode::from(9),
       _ => ExitCode::from(1),
     }
   }
 
   pub fn print(&self) {
-    match self {
-      Self::Cli(error) => eprintln!("{error}"),
-      _ => eprintln!("bunode: {self}"),
-    }
+    eprintln!("bunode: {self}");
   }
 }
