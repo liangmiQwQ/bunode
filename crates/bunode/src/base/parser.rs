@@ -8,7 +8,7 @@ use lexopt::Arg;
 use crate::error::CliError;
 
 use super::{
-  builtins, data_url, env_file,
+  builtins, common_js_preload, data_url, env_file,
   options::{HelpSection, OptionShape, OptionSpec, ValueMode, find_long_option, find_short_option},
 };
 
@@ -508,7 +508,7 @@ fn required_option_value(value: Option<OsString>, option: &str) -> Result<OsStri
 
 fn push_common_js_preload(builder: &mut BunArgsBuilder, value: OsString) {
   if !builtins::is_builtin_module(&value.to_string_lossy()) {
-    builder.common_js_preloads.push(join_option_value("--preload", value));
+    builder.common_js_preloads.push(value);
   }
 }
 
@@ -678,7 +678,8 @@ impl ParseState {
     let mut bun_options = builder.bun_options;
     let env_file_node_options = self.env_file_node_options;
 
-    bun_options.extend(builder.common_js_preloads);
+    bun_options
+      .extend(resolve_common_js_preloads(builder.common_js_preloads, should_materialize_preloads)?);
     bun_options
       .extend(resolve_es_module_preloads(builder.es_module_preloads, should_materialize_preloads)?);
     bun_options.extend(builder.bun_preloads);
@@ -756,6 +757,26 @@ impl ParseState {
   }
 }
 
+fn resolve_common_js_preloads(
+  values: Vec<OsString>,
+  should_materialize: bool,
+) -> Result<Vec<OsString>, CliError> {
+  let mut preloads = Vec::with_capacity(values.len());
+
+  for value in values {
+    if should_materialize {
+      let path = common_js_preload::materialize_require_wrapper(&value.to_string_lossy())?;
+
+      preloads.push(join_option_value("--preload", path.into_os_string()));
+      continue;
+    }
+
+    preloads.push(join_option_value("--preload", value));
+  }
+
+  Ok(preloads)
+}
+
 fn resolve_es_module_preloads(
   values: Vec<OsString>,
   should_materialize: bool,
@@ -799,6 +820,42 @@ mod tests {
     let shape = super::super::options::option_shape_for_bun(&Version::new(1, 3, 14));
 
     parse(args, Some(OsString::from(node_options)), &shape)
+  }
+
+  fn assert_common_js_preload(option: &OsString, specifier: &str) {
+    let option = option.to_string_lossy();
+    let path = option.strip_prefix("--preload=").expect("CommonJS preload should be wrapped");
+    let wrapper = std::fs::read_to_string(path).expect("CommonJS wrapper should be readable");
+
+    assert!(path.contains("bunode-require-preload"));
+    assert!(wrapper.contains("createRequire"));
+    assert!(wrapper.contains(&format!(")({});", js_string_literal(specifier))));
+  }
+
+  fn js_string_literal(value: &str) -> String {
+    format!("\"{}\"", escape_json_string(value))
+  }
+
+  fn escape_json_string(value: &str) -> String {
+    let mut result = String::new();
+
+    for character in value.chars() {
+      match character {
+        '"' => result.push_str("\\\""),
+        '\\' => result.push_str("\\\\"),
+        '\n' => result.push_str("\\n"),
+        '\r' => result.push_str("\\r"),
+        '\t' => result.push_str("\\t"),
+        character if character.is_control() => {
+          use std::fmt::Write as _;
+
+          let _ = write!(result, "\\u{:04x}", u32::from(character));
+        }
+        character => result.push(character),
+      }
+    }
+
+    result
   }
 
   #[test]
@@ -1132,10 +1189,9 @@ mod tests {
     let options =
       parse_cli(&["node", "--import", "./esm.mjs", "--require", "./cjs.cjs", "-e", "0"])?;
 
-    assert_eq!(
-      options.bun_options,
-      vec![OsString::from("--preload=./cjs.cjs"), OsString::from("--preload=./esm.mjs")],
-    );
+    assert_eq!(options.bun_options.len(), 2);
+    assert_common_js_preload(&options.bun_options[0], "./cjs.cjs");
+    assert_eq!(options.bun_options[1], OsString::from("--preload=./esm.mjs"));
 
     Ok(())
   }
@@ -1148,10 +1204,9 @@ mod tests {
       "--require ./env.cjs",
     )?;
 
-    assert_eq!(
-      options.bun_options,
-      vec![OsString::from("--preload=./env.cjs"), OsString::from("--preload=./cli.js")],
-    );
+    assert_eq!(options.bun_options.len(), 2);
+    assert_common_js_preload(&options.bun_options[0], "./env.cjs");
+    assert_eq!(options.bun_options[1], OsString::from("--preload=./cli.js"));
 
     Ok(())
   }
@@ -1283,7 +1338,8 @@ mod tests {
   fn parse_should_keep_double_quoted_node_options_value() -> Result<(), crate::error::CliError> {
     let options = parse_with_node_options(&["node", "-e", "0"], "--require \"./with space.js\"")?;
 
-    assert_eq!(options.bun_options, vec![OsString::from("--preload=./with space.js")],);
+    assert_eq!(options.bun_options.len(), 1);
+    assert_common_js_preload(&options.bun_options[0], "./with space.js");
 
     Ok(())
   }
@@ -1293,7 +1349,8 @@ mod tests {
   {
     let options = parse_with_node_options(&["node", "-e", "0"], "--require './preload.js'")?;
 
-    assert_eq!(options.bun_options, vec![OsString::from("--preload='./preload.js'")],);
+    assert_eq!(options.bun_options.len(), 1);
+    assert_common_js_preload(&options.bun_options[0], "'./preload.js'");
 
     Ok(())
   }
@@ -1302,7 +1359,8 @@ mod tests {
   fn parse_should_preserve_node_options_backslashes() -> Result<(), crate::error::CliError> {
     let options = parse_with_node_options(&["node", "-e", "0"], r"--require C:\tmp\preload.js")?;
 
-    assert_eq!(options.bun_options, vec![OsString::from(r"--preload=C:\tmp\preload.js")]);
+    assert_eq!(options.bun_options.len(), 1);
+    assert_common_js_preload(&options.bun_options[0], r"C:\tmp\preload.js");
 
     Ok(())
   }
@@ -1312,7 +1370,8 @@ mod tests {
   {
     let options = parse_with_node_options(&["node", "-e", "0"], r#"--require "./x\" y.js""#)?;
 
-    assert_eq!(options.bun_options, vec![OsString::from(r#"--preload=./x" y.js"#)]);
+    assert_eq!(options.bun_options.len(), 1);
+    assert_common_js_preload(&options.bun_options[0], r#"./x" y.js"#);
 
     Ok(())
   }

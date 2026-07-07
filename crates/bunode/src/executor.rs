@@ -70,7 +70,7 @@ impl Executor {
       NodeCommand::Print(code) => {
         let code = build_print_expression(code);
 
-        Self::run_bun(invocation, BunMode::Print(code.as_os_str()))
+        Self::run_bun(invocation, BunMode::Eval(code.as_os_str()))
       }
       NodeCommand::PrintStdin => Self::run_print_stdin(invocation),
       NodeCommand::Script(script) if script == OsStr::new("-") => {
@@ -110,7 +110,7 @@ impl Executor {
 
     let expression = build_print_stdin_expression();
 
-    Self::run_bun(invocation, BunMode::Print(expression.as_os_str()))
+    Self::run_bun(invocation, BunMode::Eval(expression.as_os_str()))
   }
 
   fn run_bun(
@@ -159,7 +159,7 @@ fn build_eval_expression(code: &OsStr) -> std::ffi::OsString {
   let globals = node_globals_setup("[eval]");
 
   std::ffi::OsString::from(format!(
-    "await(async()=>{{const __bunodeSource={source};try{{new Function(__bunodeSource);{globals}return globalThis.eval(__bunodeSource)}}catch(__bunodeError){{if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{{type:\"text/javascript\"}}));try{{await import(__bunodeUrl)}}finally{{URL.revokeObjectURL(__bunodeUrl)}}}}}})()",
+    "await(async()=>{{const __bunodeSource={source};let __bunodeScript=true;try{{new Function(__bunodeSource)}}catch(__bunodeError){{if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;__bunodeScript=false}}if(__bunodeScript){{{globals}return globalThis.eval(__bunodeSource)}}const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{{type:\"text/javascript\"}}));try{{await import(__bunodeUrl)}}finally{{URL.revokeObjectURL(__bunodeUrl)}}}})()",
   ))
 }
 
@@ -169,7 +169,7 @@ fn build_print_expression(code: &OsStr) -> std::ffi::OsString {
   let helpers = print_helpers();
 
   std::ffi::OsString::from(format!(
-    "(()=>{{{helpers}const __bunodeSource={source};try{{new Function(__bunodeStripHashbang(__bunodeSource))}}catch(__bunodeError){{__bunodeRejectPrintModuleSource(__bunodeSource,__bunodeError)}}{globals}return globalThis.eval(__bunodeSource)}})()",
+    "(()=>{{{helpers}try{{const __bunodeSource={source};try{{new Function(__bunodeStripHashbang(__bunodeSource))}}catch(__bunodeError){{__bunodeRejectPrintModuleSource(__bunodeSource,__bunodeError)}}{globals}__bunodePrint(globalThis.eval(__bunodeSource))}}catch(__bunodeError){{__bunodeReportError(__bunodeError)}}}})()",
   ))
 }
 
@@ -179,7 +179,7 @@ fn build_print_stdin_expression() -> std::ffi::OsString {
   let helpers = print_helpers();
 
   std::ffi::OsString::from(format!(
-    "(()=>{{{helpers}const __bunodeFs=require(\"node:fs\");const __bunodeSource=__bunodeFs.readFileSync(0,\"utf8\");try{{new Function(__bunodeStripHashbang(__bunodeSource))}}catch(__bunodeError){{__bunodeRejectPrintModuleSource(__bunodeSource,__bunodeError)}}{globals}return globalThis.eval(__bunodeSource)}})()",
+    "(()=>{{{helpers}try{{const __bunodeFs=require(\"node:fs\");const __bunodeSource=__bunodeFs.readFileSync(0,\"utf8\");try{{new Function(__bunodeStripHashbang(__bunodeSource))}}catch(__bunodeError){{__bunodeRejectPrintModuleSource(__bunodeSource,__bunodeError)}}{globals}__bunodePrint(globalThis.eval(__bunodeSource))}}catch(__bunodeError){{__bunodeReportError(__bunodeError)}}}})()",
   ))
 }
 
@@ -188,7 +188,7 @@ fn build_stdin_module_expression() -> std::ffi::OsString {
   let globals = node_globals_setup("[stdin]");
 
   std::ffi::OsString::from(format!(
-    "await(async()=>{{const __bunodeStripHashbang=(source)=>{{if(!source.startsWith(\"#!\"))return source;const index=source.indexOf(String.fromCharCode(10));return source.slice(index===-1?source.length:index+1)}};const __bunodeFs=require(\"node:fs\");const __bunodeSource=__bunodeFs.readFileSync(0,\"utf8\");if(__bunodeSource.length===0)return;try{{new Function(__bunodeStripHashbang(__bunodeSource));{globals}return globalThis.eval(__bunodeSource)}}catch(__bunodeError){{if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{{type:\"text/javascript\"}}));try{{await import(__bunodeUrl)}}finally{{URL.revokeObjectURL(__bunodeUrl)}}}}}})()",
+    "await(async()=>{{const __bunodeStripHashbang=(source)=>{{if(!source.startsWith(\"#!\"))return source;const index=source.indexOf(String.fromCharCode(10));return source.slice(index===-1?source.length:index+1)}};const __bunodeFs=require(\"node:fs\");const __bunodeSource=__bunodeFs.readFileSync(0,\"utf8\");if(__bunodeSource.length===0)return;let __bunodeScript=true;try{{new Function(__bunodeStripHashbang(__bunodeSource))}}catch(__bunodeError){{if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;__bunodeScript=false}}if(__bunodeScript){{{globals}return globalThis.eval(__bunodeSource)}}const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{{type:\"text/javascript\"}}));try{{await import(__bunodeUrl)}}finally{{URL.revokeObjectURL(__bunodeUrl)}}}})()",
   ))
 }
 
@@ -196,7 +196,7 @@ fn node_globals_setup(filename: &str) -> String {
   let filename = js_string_literal(filename);
 
   format!(
-    "const __bunodeModule=globalThis.module??{{exports:{{}}}};const __bunodeExports=globalThis.exports??__bunodeModule.exports;Object.assign(globalThis,{{__filename:{filename},__dirname:\".\",require,module:__bunodeModule,exports:__bunodeExports}});",
+    "const __bunodeModule={{id:{filename},path:\".\",exports:{{}},filename:require(\"node:path\").resolve({filename}),loaded:false,children:[],paths:globalThis.module?.paths??[]}};__bunodeModule.require=require;Object.assign(globalThis,{{__filename:{filename},__dirname:\".\",require,module:__bunodeModule,exports:__bunodeModule.exports}});",
   )
 }
 
@@ -205,7 +205,7 @@ fn js_string_literal(value: &str) -> String {
 }
 
 const fn print_helpers() -> &'static str {
-  "const __bunodeStripHashbang=(source)=>{if(!source.startsWith(\"#!\"))return source;const index=source.indexOf(String.fromCharCode(10));return source.slice(index===-1?source.length:index+1)};const __bunodeRejectPrintModuleSource=(_source,error)=>{if(error instanceof SyntaxError){console.error(\"Error [ERR_EVAL_ESM_CANNOT_PRINT]: --print cannot be used with ESM input\");process.exit(1)}throw error};"
+  "const __bunodeStripHashbang=(source)=>{if(!source.startsWith(\"#!\"))return source;const index=source.indexOf(String.fromCharCode(10));return source.slice(index===-1?source.length:index+1)};const __bunodeLooksLikeModuleSource=(source)=>/\\b(?:import|export|await)\\b/.test(source);const __bunodeRejectPrintModuleSource=(source,error)=>{if(error instanceof SyntaxError&&__bunodeLooksLikeModuleSource(source)){console.error(\"Error [ERR_EVAL_ESM_CANNOT_PRINT]: --print cannot be used with ESM input\");process.exit(1)}throw error};const __bunodeReportError=(error)=>{console.error(error?.stack??error);process.exit(1)};const __bunodeInspect=require(\"node:util\").inspect;const __bunodeUseColor=()=>!process.env.NO_COLOR&&process.env.FORCE_COLOR!==\"0\"&&(!!process.env.FORCE_COLOR||!!process.env.CLICOLOR_FORCE);const __bunodePrint=(value)=>{console.log(typeof value===\"string\"?value:__bunodeInspect(value,{colors:__bunodeUseColor()}))};"
 }
 
 #[cfg(unix)]
