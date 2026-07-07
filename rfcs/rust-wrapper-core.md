@@ -78,6 +78,7 @@ We can't make the behavior 100% compatible but it is basically similar. Consider
 For CI and non-TTY environment, Node.js executes stdin instead of starting the REPL. Bunode starts Bun first and passes a small stdin shim that reads fd 0 inside Bun, so preloads can run and exit before an unbounded stdin pipe is drained. Plain script stdin keeps Node-like script globals through indirect eval, while stdin that needs module parsing is loaded through an in-memory Blob module so static imports and top-level await still work.
 
 For `node -p` reading the program from stdin, Bunode passes Bun a small print expression that reads fd 0 inside Bun, exposes stdin-like globals, and evaluates the user program without helper bindings colliding with user declarations.
+For eval and print modes, Bunode wraps user code just enough to expose Node-like `[eval]`, `[stdin]`, `module`, `exports`, and `require` globals for script-shaped input. Print mode rejects module-shaped input instead of letting Bun accept ESM that Node reports as `ERR_EVAL_ESM_CANNOT_PRINT`.
 
 ### `node [options] [ script.js ] [arguments]`
 
@@ -121,6 +122,7 @@ The preload can be injected with `bun --preload`, the preload JavaScript file wi
 
 For eval, print, stdin and script modes, Bunode injects the preload before CLI user preloads translated from `--require`, `--import`, and `--bun-preload`, so corrected process metadata is visible to normal user code. Bun project `bunfig.toml` preloads run before CLI runtime preloads in Bun itself and cannot be reordered by the wrapper without changing cwd/config lookup behavior, so they may observe raw Bun metadata. TTY REPL mode is delegated to `bun repl` without the metadata preload because Bun's REPL does not execute runtime preloads through the same entrypoint; this is acceptable because direct REPL usage is human-facing and already listed as best-effort behavior.
 Node builtin module specifiers passed to `--require` or `--import` are kept in `process.execArgv` when they came from CLI mode before the script operand, but are not translated to Bun `--preload`, because Bun expects preload values to resolve as files.
+JavaScript `data:` imports are decoded into a generated preload wrapper that imports the source through an in-memory Blob URL. This gives Bun a file it can preload without giving the user module an accidental temp-directory base for relative imports.
 
 ### Help document
 

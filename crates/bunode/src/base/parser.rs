@@ -1166,7 +1166,7 @@ mod tests {
     let preload = preload.to_string_lossy();
     let path = preload.strip_prefix("--preload=").expect("data import should become preload");
 
-    assert_eq!(std::fs::read(path).unwrap(), b"globalThis.loaded=1");
+    assert!(std::fs::read_to_string(path).unwrap().contains("URL.createObjectURL"));
 
     Ok(())
   }

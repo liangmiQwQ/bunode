@@ -12,6 +12,7 @@ const BUILTIN_MODULES: &[&str] = &[
   "_stream_readable",
   "_stream_transform",
   "_stream_writable",
+  "_stream_wrap",
   "_tls_common",
   "_tls_wrap",
   "assert",
@@ -91,6 +92,7 @@ mod tests {
     assert!(is_builtin_module("node:fs"));
     assert!(is_builtin_module("node:test"));
     assert!(is_builtin_module("_stream_readable"));
+    assert!(is_builtin_module("_stream_wrap"));
     assert!(!is_builtin_module("./fs.js"));
   }
 }

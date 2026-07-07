@@ -1,0 +1,10 @@
+evalMeta=[eval]:.:object:object:function
+printModuleStatus=1
+printModuleRejected=true
+hashbangMeta=[stdin]:.:1
+mixedEnvOk
+multiPreload
+multiMain
+streamWrapOk
+dataRelativeStatus=1
+dataRelativeRejected=true

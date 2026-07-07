@@ -62,8 +62,16 @@ impl Executor {
         println!("{}", self.versions.bunode_version_text());
         Ok(ExecutionResult::ExitCode(ExitCode::SUCCESS))
       }
-      NodeCommand::Eval(code) => Self::run_bun(invocation, BunMode::Eval(code)),
-      NodeCommand::Print(code) => Self::run_bun(invocation, BunMode::Print(code)),
+      NodeCommand::Eval(code) => {
+        let code = build_eval_expression(code);
+
+        Self::run_bun(invocation, BunMode::Eval(code.as_os_str()))
+      }
+      NodeCommand::Print(code) => {
+        let code = build_print_expression(code);
+
+        Self::run_bun(invocation, BunMode::Print(code.as_os_str()))
+      }
       NodeCommand::PrintStdin => Self::run_print_stdin(invocation),
       NodeCommand::Script(script) if script == OsStr::new("-") => {
         Self::run_script_stdin(invocation)
@@ -100,7 +108,7 @@ impl Executor {
       return Self::run_bun(invocation, BunMode::Repl);
     }
 
-    let expression = build_stdin_eval_expression();
+    let expression = build_print_stdin_expression();
 
     Self::run_bun(invocation, BunMode::Print(expression.as_os_str()))
   }
@@ -146,18 +154,58 @@ fn invocation_with_script_argument(
   invocation
 }
 
-fn build_stdin_eval_expression() -> std::ffi::OsString {
+fn build_eval_expression(code: &OsStr) -> std::ffi::OsString {
+  let source = js_string_literal(&code.to_string_lossy());
+  let globals = node_globals_setup("[eval]");
+
+  std::ffi::OsString::from(format!(
+    "await(async()=>{{const __bunodeSource={source};try{{new Function(__bunodeSource);{globals}return globalThis.eval(__bunodeSource)}}catch(__bunodeError){{if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{{type:\"text/javascript\"}}));try{{await import(__bunodeUrl)}}finally{{URL.revokeObjectURL(__bunodeUrl)}}}}}})()",
+  ))
+}
+
+fn build_print_expression(code: &OsStr) -> std::ffi::OsString {
+  let source = js_string_literal(&code.to_string_lossy());
+  let globals = node_globals_setup("[eval]");
+  let helpers = print_helpers();
+
+  std::ffi::OsString::from(format!(
+    "(()=>{{{helpers}const __bunodeSource={source};try{{new Function(__bunodeStripHashbang(__bunodeSource))}}catch(__bunodeError){{__bunodeRejectPrintModuleSource(__bunodeSource,__bunodeError)}}{globals}return globalThis.eval(__bunodeSource)}})()",
+  ))
+}
+
+fn build_print_stdin_expression() -> std::ffi::OsString {
   // Read fd 0 inside Bun so preloads can exit before an unbounded pipe is drained.
-  std::ffi::OsString::from(
-    "(()=>{const __bunodeFs=require(\"node:fs\");const __bunodeModule=globalThis.module??{exports:{}};const __bunodeExports=globalThis.exports??__bunodeModule.exports;Object.assign(globalThis,{__filename:\"[stdin]\",__dirname:\".\",require,module:__bunodeModule,exports:__bunodeExports});return globalThis.eval(__bunodeFs.readFileSync(0,\"utf8\"))})()",
-  )
+  let globals = node_globals_setup("[stdin]");
+  let helpers = print_helpers();
+
+  std::ffi::OsString::from(format!(
+    "(()=>{{{helpers}const __bunodeFs=require(\"node:fs\");const __bunodeSource=__bunodeFs.readFileSync(0,\"utf8\");try{{new Function(__bunodeStripHashbang(__bunodeSource))}}catch(__bunodeError){{__bunodeRejectPrintModuleSource(__bunodeSource,__bunodeError)}}{globals}return globalThis.eval(__bunodeSource)}})()",
+  ))
 }
 
 fn build_stdin_module_expression() -> std::ffi::OsString {
   // Parse first: plain stdin keeps Node's script-like globals, while ESM stdin uses a Blob module.
-  std::ffi::OsString::from(
-    "await(async()=>{const __bunodeFs=require(\"node:fs\");const __bunodeSource=__bunodeFs.readFileSync(0,\"utf8\");if(__bunodeSource.length===0)return;try{new Function(__bunodeSource);const __bunodeModule=globalThis.module??{exports:{}};const __bunodeExports=globalThis.exports??__bunodeModule.exports;Object.assign(globalThis,{__filename:\"[stdin]\",__dirname:\".\",require,module:__bunodeModule,exports:__bunodeExports});return globalThis.eval(__bunodeSource)}catch(__bunodeError){if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{type:\"text/javascript\"}));try{await import(__bunodeUrl)}finally{URL.revokeObjectURL(__bunodeUrl)}}})()",
+  let globals = node_globals_setup("[stdin]");
+
+  std::ffi::OsString::from(format!(
+    "await(async()=>{{const __bunodeStripHashbang=(source)=>{{if(!source.startsWith(\"#!\"))return source;const index=source.indexOf(String.fromCharCode(10));return source.slice(index===-1?source.length:index+1)}};const __bunodeFs=require(\"node:fs\");const __bunodeSource=__bunodeFs.readFileSync(0,\"utf8\");if(__bunodeSource.length===0)return;try{{new Function(__bunodeStripHashbang(__bunodeSource));{globals}return globalThis.eval(__bunodeSource)}}catch(__bunodeError){{if(!(__bunodeError instanceof SyntaxError))throw __bunodeError;const __bunodeUrl=URL.createObjectURL(new Blob([__bunodeSource],{{type:\"text/javascript\"}}));try{{await import(__bunodeUrl)}}finally{{URL.revokeObjectURL(__bunodeUrl)}}}}}})()",
+  ))
+}
+
+fn node_globals_setup(filename: &str) -> String {
+  let filename = js_string_literal(filename);
+
+  format!(
+    "const __bunodeModule=globalThis.module??{{exports:{{}}}};const __bunodeExports=globalThis.exports??__bunodeModule.exports;Object.assign(globalThis,{{__filename:{filename},__dirname:\".\",require,module:__bunodeModule,exports:__bunodeExports}});",
   )
+}
+
+fn js_string_literal(value: &str) -> String {
+  format!("\"{}\"", escape_json_string(value))
+}
+
+const fn print_helpers() -> &'static str {
+  "const __bunodeStripHashbang=(source)=>{if(!source.startsWith(\"#!\"))return source;const index=source.indexOf(String.fromCharCode(10));return source.slice(index===-1?source.length:index+1)};const __bunodeRejectPrintModuleSource=(_source,error)=>{if(error instanceof SyntaxError){console.error(\"Error [ERR_EVAL_ESM_CANNOT_PRINT]: --print cannot be used with ESM input\");process.exit(1)}throw error};"
 }
 
 #[cfg(unix)]

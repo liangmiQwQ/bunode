@@ -28,7 +28,7 @@ pub(super) fn materialize_javascript_module(specifier: &str) -> Result<Option<Pa
     return Ok(None);
   }
 
-  let source = decode_payload(metadata, payload)?;
+  let source = build_blob_import_wrapper(&decode_payload(metadata, payload)?);
   let path = module_path(specifier);
   write_content_addressed_file(&path, &source)
     .map_err(|error| CliError::failure(format!("failed to prepare data URL import: {error}")))?;
@@ -112,6 +112,51 @@ fn decode_base64(value: &str) -> Result<Vec<u8>, CliError> {
   }
 
   Ok(result)
+}
+
+fn build_blob_import_wrapper(source: &[u8]) -> Vec<u8> {
+  let encoded = encode_base64(source);
+
+  format!(
+    "const __bunodeDataImportBytes=Uint8Array.from(atob(\"{encoded}\"),character=>character.charCodeAt(0));\nconst __bunodeDataImportUrl=URL.createObjectURL(new Blob([__bunodeDataImportBytes],{{type:\"text/javascript\"}}));\ntry{{await import(__bunodeDataImportUrl)}}finally{{URL.revokeObjectURL(__bunodeDataImportUrl)}}\n",
+  )
+  .into_bytes()
+}
+
+fn encode_base64(value: &[u8]) -> String {
+  const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let mut result = String::new();
+  let mut index = 0;
+
+  while index < value.len() {
+    let first = value[index];
+    let second = value.get(index + 1).copied();
+    let third = value.get(index + 2).copied();
+
+    result.push(ALPHABET[(first >> 2) as usize] as char);
+    result.push(
+      ALPHABET[(((first & 0b0000_0011) << 4) | (second.unwrap_or_default() >> 4)) as usize] as char,
+    );
+
+    match (second, third) {
+      (Some(second), Some(third)) => {
+        result.push(ALPHABET[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char);
+        result.push(ALPHABET[(third & 0b0011_1111) as usize] as char);
+      }
+      (Some(second), None) => {
+        result.push(ALPHABET[((second & 0b0000_1111) << 2) as usize] as char);
+        result.push('=');
+      }
+      (None, _) => {
+        result.push('=');
+        result.push('=');
+      }
+    }
+
+    index += 3;
+  }
+
+  result
 }
 
 fn validate_base64(value: &str) -> Result<(), CliError> {
@@ -226,7 +271,9 @@ fn fnv1a(value: &[u8]) -> u64 {
 
 #[cfg(test)]
 mod tests {
-  use super::{decode_base64, decode_percent, materialize_javascript_module};
+  use super::{
+    build_blob_import_wrapper, decode_base64, decode_percent, materialize_javascript_module,
+  };
 
   #[test]
   fn should_decode_percent_data_payload() -> Result<(), crate::error::CliError> {
@@ -259,7 +306,10 @@ mod tests {
     )?
     .unwrap();
 
-    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
+    let wrapper = std::fs::read_to_string(&path).unwrap();
+
+    assert!(wrapper.contains("URL.createObjectURL"));
+    assert!(wrapper.contains("Z2xvYmFsVGhpcy5sb2FkZWQ9MQ=="));
 
     Ok(())
   }
@@ -269,7 +319,7 @@ mod tests {
     let path =
       materialize_javascript_module("data:text/javascript,globalThis.loaded%3D1")?.unwrap();
 
-    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
+    assert!(std::fs::read_to_string(&path).unwrap().contains("URL.createObjectURL"));
 
     Ok(())
   }
@@ -280,7 +330,7 @@ mod tests {
     let path =
       materialize_javascript_module("data:Text/JavaScript,globalThis.loaded%3D1")?.unwrap();
 
-    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
+    assert!(std::fs::read_to_string(&path).unwrap().contains("URL.createObjectURL"));
 
     Ok(())
   }
@@ -290,9 +340,17 @@ mod tests {
     let path =
       materialize_javascript_module("DATA:text/javascript,globalThis.loaded%3D1")?.unwrap();
 
-    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
+    assert!(std::fs::read_to_string(&path).unwrap().contains("URL.createObjectURL"));
 
     Ok(())
+  }
+
+  #[test]
+  fn should_wrap_data_payload_as_blob_import() {
+    let wrapper = String::from_utf8(build_blob_import_wrapper(b"import './x.js'")).unwrap();
+
+    assert!(wrapper.contains("await import(__bunodeDataImportUrl)"));
+    assert!(!wrapper.contains("import './x.js'"));
   }
 
   #[test]
@@ -300,7 +358,7 @@ mod tests {
     let path =
       materialize_javascript_module("data:text/javascript,globalThis.loaded%3D1#cache")?.unwrap();
 
-    assert_eq!(std::fs::read(&path).unwrap(), b"globalThis.loaded=1");
+    assert!(std::fs::read_to_string(&path).unwrap().contains("URL.createObjectURL"));
 
     Ok(())
   }

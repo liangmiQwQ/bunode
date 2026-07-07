@@ -13,39 +13,76 @@ pub(super) fn read_node_options(path: &std::ffi::OsStr) -> Result<Option<OsStrin
 
   let source = fs::read_to_string(path)
     .map_err(|error| CliError::failure(format!("failed to read {}: {error}", path.display())))?;
+  let node_options = read_node_options_from_source(&source)?;
+
+  Ok(node_options.map(OsString::from))
+}
+
+fn read_node_options_from_source(source: &str) -> Result<Option<String>, CliError> {
+  let lines = source.lines().collect::<Vec<_>>();
+  let mut index = 0;
   let mut node_options = None;
 
-  for line in source.lines() {
-    let Some((name, value)) = parse_assignment(line)? else {
+  while let Some(line) = lines.get(index) {
+    let Some((name, value)) = parse_assignment_head(line) else {
+      index += 1;
       continue;
     };
 
-    if name == "NODE_OPTIONS" {
-      node_options = Some(OsString::from(value));
+    if name != "NODE_OPTIONS" {
+      index += 1;
+      continue;
     }
+
+    let mut value = value.trim().to_string();
+
+    // NODE_OPTIONS may be quoted across physical lines; unrelated values are ignored above.
+    loop {
+      match parse_value(&value) {
+        Ok(value) => {
+          node_options = Some(value);
+          break;
+        }
+        Err(_) if value_starts_with_quote(&value) && index + 1 < lines.len() => {
+          index += 1;
+          value.push('\n');
+          value.push_str(lines[index]);
+        }
+        Err(error) => return Err(error),
+      }
+    }
+
+    index += 1;
   }
 
   Ok(node_options)
 }
 
+#[cfg(test)]
 fn parse_assignment(line: &str) -> Result<Option<(&str, String)>, CliError> {
+  let Some((name, value)) = parse_assignment_head(line) else {
+    return Ok(None);
+  };
+
+  Ok(Some((name, parse_value(value)?)))
+}
+
+fn parse_assignment_head(line: &str) -> Option<(&str, &str)> {
   let line = line.trim_start();
 
   if line.is_empty() || line.starts_with('#') {
-    return Ok(None);
+    return None;
   }
 
   let line = line.strip_prefix("export ").unwrap_or(line);
-  let Some((name, value)) = line.split_once('=') else {
-    return Ok(None);
-  };
+  let (name, value) = line.split_once('=')?;
   let name = name.trim();
 
   if name.is_empty() {
-    return Ok(None);
+    return None;
   }
 
-  Ok(Some((name, parse_value(value)?)))
+  Some((name, value))
 }
 
 fn parse_value(value: &str) -> Result<String, CliError> {
@@ -95,9 +132,13 @@ fn parse_unquoted_value(value: &str) -> String {
   result.trim_end().to_string()
 }
 
+fn value_starts_with_quote(value: &str) -> bool {
+  matches!(value.trim().as_bytes().first(), Some(b'"' | b'\''))
+}
+
 #[cfg(test)]
 mod tests {
-  use super::parse_assignment;
+  use super::{parse_assignment, read_node_options_from_source};
 
   #[test]
   fn should_parse_node_options_assignment() {
@@ -130,6 +171,27 @@ mod tests {
   #[test]
   fn should_reject_unterminated_quoted_values() {
     assert!(parse_assignment(r#"NODE_OPTIONS="--conditions from-env"#).is_err());
+  }
+
+  #[test]
+  fn should_ignore_unrelated_malformed_values() -> Result<(), crate::error::CliError> {
+    let source = "BAD=\"unterminated\nNODE_OPTIONS=\"--conditions from-env\"\n";
+
+    assert_eq!(read_node_options_from_source(source)?, Some("--conditions from-env".to_string()));
+
+    Ok(())
+  }
+
+  #[test]
+  fn should_parse_multiline_node_options_values() -> Result<(), crate::error::CliError> {
+    let source = "NODE_OPTIONS=\"--conditions a\n--conditions b\"\n";
+
+    assert_eq!(
+      read_node_options_from_source(source)?,
+      Some("--conditions a\n--conditions b".to_string())
+    );
+
+    Ok(())
   }
 
   #[test]
