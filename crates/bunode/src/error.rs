@@ -41,6 +41,14 @@ pub enum BunodeError {
   #[error("Bun binary not found at {0}.")]
   BunBinaryNotFoundWithPath(PathBuf),
 
+  // ---- Preload handling ----------------------
+  #[error("Failed to prepare Bunode preload at {path}: {source}")]
+  PreloadPreparation {
+    path: PathBuf,
+    #[source]
+    source: io::Error,
+  },
+
   // ---- Version handling ----------------------
   #[error("Failed to parse Bun's version {0}.")]
   BadBunVersion(String),

@@ -1,7 +1,6 @@
 //! Generated preload support for Node-facing process metadata.
 
 use std::{
-  env,
   fs::{self, OpenOptions},
   io::{self, Write},
   path::{Path, PathBuf},
@@ -21,14 +20,11 @@ const PRELOAD_FILE_NAME: &str = "bunode-preload.cjs";
 const PRELOAD_SOURCE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/preload.min.cjs"));
 
 pub fn prepare() -> Result<PathBuf, BunodeError> {
-  let bun_path = bun::path()?;
-  let bun_directory = bun_path
-    .parent()
-    .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "failed to resolve Bun directory"))?;
+  let directory = bun::bun_binary_directory()?;
+  let preload_path = directory.join(PRELOAD_FILE_NAME);
 
-  prepare_in_directory(bun_directory, PRELOAD_FILE_NAME)
-    .or_else(|_| prepare_temporary(PRELOAD_FILE_NAME))
-    .map_err(Into::into)
+  prepare_in_directory(&directory, PRELOAD_FILE_NAME)
+    .map_err(|source| BunodeError::PreloadPreparation { path: preload_path, source })
 }
 
 fn prepare_in_directory(directory: &Path, preload_file_name: &str) -> io::Result<PathBuf> {
@@ -57,26 +53,6 @@ fn prepare_in_directory(directory: &Path, preload_file_name: &str) -> io::Result
   }
 
   Ok(preload_path)
-}
-
-fn prepare_temporary(preload_file_name: &str) -> io::Result<PathBuf> {
-  // Some installations keep the Bun directory read-only, so fall back to a per-user stable copy.
-  prepare_in_directory(&fallback_preload_directory(), preload_file_name)
-}
-
-fn fallback_preload_directory() -> PathBuf {
-  if cfg!(windows) {
-    return env::var_os("LOCALAPPDATA")
-      .or_else(|| env::var_os("USERPROFILE"))
-      .map_or_else(env::temp_dir, PathBuf::from)
-      .join("bunode");
-  }
-
-  env::var_os("XDG_CACHE_HOME")
-    .map(PathBuf::from)
-    .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
-    .unwrap_or_else(env::temp_dir)
-    .join("bunode")
 }
 
 fn write_private_preload_file(directory: &Path, prefix: &str, suffix: &str) -> io::Result<PathBuf> {

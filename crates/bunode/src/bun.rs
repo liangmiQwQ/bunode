@@ -16,14 +16,25 @@ pub fn command() -> Result<Command, BunodeError> {
   }
 }
 
-pub fn path() -> Result<PathBuf, BunodeError> {
+pub fn bun_binary_directory() -> Result<PathBuf, BunodeError> {
   let executable = env::current_exe()?;
   let executable_dir = executable.parent().ok_or(BunodeError::BunBinaryNotFound())?;
 
   #[cfg(windows)]
-  let result = { executable_dir.join("bun").join("bun.exe") };
+  let result = { executable_dir.join("bun") };
   #[cfg(not(windows))]
-  let result = { executable_dir.join("..").join("bun").join("bun") };
+  let result = { executable_dir.join("..").join("bun") };
+
+  Ok(result)
+}
+
+pub fn path() -> Result<PathBuf, BunodeError> {
+  let bun_binary_directory = bun_binary_directory()?;
+
+  #[cfg(windows)]
+  let result = { bun_binary_directory.join("bun.exe") };
+  #[cfg(not(windows))]
+  let result = { bun_binary_directory.join("bun") };
 
   Ok(result)
 }
