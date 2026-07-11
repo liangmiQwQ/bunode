@@ -12,17 +12,13 @@ The project has mainly two different parts: Rust wrapper core and JavaScript tar
 
 ### Rust Core (Provide the ability to get Node.js wrapper tarball)
 
-Rust core is a wrapper to underlying Bun, including options translation, environment variables injection, and CLI usage consistence.
+Rust core is a wrapper to underlying Bun, including options translation, environment variables injection, and CLI usage consistency.
 
-Its source code won't be published on crates.io. Only for internal use.
+Its source code won't be published on crates.io. But its binary will be published on NPM for internal use.
 
-### JavaScript Releasing (Release the Node.js compatible tarball)
+### CLI (Turn the current using node into a Bunode binary)
 
-- `@bunode/core`, the underlying library to generate Bun based Node.js-compatible tarball from a Bun tarball.
-- `@bunode/registry`, the server with the same shape as `https://nodejs.org/dist`. Could be deployed on real servers.
-- `@bunode/cli`, the local registry service installed on users' computers. Provide `bunode` cli to control the wrapper status.
-
-`@bunode/registry` is based on `@bunode/core`, `@bunode/cli` is based on `@bunode/registry`.
+The `@bunode/cli` is a tool to modify the current using Node.js. It includes two parts, a small bunode wrapper writtern in Node.js with `free-shellrc`, and the Rust binary CLI can run without any Node.js runtime.
 
 ## Rule
 
