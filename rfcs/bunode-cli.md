@@ -20,6 +20,8 @@ We use a `napi-rs`-like style, and npm's optional dependencies to release the na
 
 The bunode cli's directory is under `~/.bunode`, and `~/.bunode/bin` will be in `PATH` (shellrc integration). The only thing in it is a executable script (`.sh` on Unix, `.cmd` and `.ps1` on Windows), it calls bunode JavaScript cli wrapper, which hardlinks (or failback to copy) the real native bunode binary to `~/.bunode/bunode[.extension]`, and finally call the real native bunode cli.
 
+The bunode core binary (`node`) should be also linked or copied.
+
 If the JavaScript wrapper fails—for example, because Node.js or the global package installation is unavailable—the launcher prints a warning and continues by executing the previously installed native Bunode CLI.
 
 ## Core features
