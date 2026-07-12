@@ -18,7 +18,7 @@ Its source code won't be published on crates.io. But its binary will be publishe
 
 ### CLI (Turn the current using node into a Bunode binary)
 
-The `@bunode/cli` is a tool to modify the current using Node.js. It includes two parts, a small bunode wrapper writtern in Node.js with `free-shellrc`, and the Rust binary CLI can run without any Node.js runtime.
+The `@bunode/cli` is a tool to generate Bunode prefix. It includes two parts, a small bunode wrapper writtern in Node.js with `free-shellrc`, and the Rust binary CLI can run without any Node.js runtime.
 
 ## Rule
 
