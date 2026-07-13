@@ -20,7 +20,22 @@
     "bin"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "free-shellrc": "catalog:",
+    "picocolors": "catalog:"
+  },
+  "optionalDependencies": {
+    "@bunode/cli-darwin-arm64": "0.0.0-alpha.0",
+    "@bunode/cli-darwin-x64": "0.0.0-alpha.0",
+    "@bunode/cli-linux-arm64-gnu": "0.0.0-alpha.0",
+    "@bunode/cli-linux-arm64-musl": "0.0.0-alpha.0",
+    "@bunode/cli-linux-x64-gnu": "0.0.0-alpha.0",
+    "@bunode/cli-linux-x64-musl": "0.0.0-alpha.0",
+    "@bunode/cli-win32-arm64-msvc": "0.0.0-alpha.0",
+    "@bunode/cli-win32-x64-msvc": "0.0.0-alpha.0"
   }
 }

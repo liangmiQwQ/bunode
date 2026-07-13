@@ -15,6 +15,12 @@ catalogs:
     '@typescript/native-preview':
       specifier: 7.0.0-dev.20260703.1
       version: 7.0.0-dev.20260703.1
+    free-shellrc:
+      specifier: ^0.2.0
+      version: 0.2.0
+    picocolors:
+      specifier: ^1.1.1
+      version: 1.1.1
     typescript:
       specifier: ^6.0.3
       version: 6.0.3
@@ -50,6 +56,12 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.0
+      free-shellrc:
+        specifier: 'catalog:'
+        version: 0.2.0
+      picocolors:
+        specifier: 'catalog:'
+        version: 1.1.1
 
 packages:
 
@@ -759,6 +771,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  free-shellrc@0.2.0:
+    resolution: {integrity: sha512-2ATsb88O/NwxlVmnXgfI8dHLY5A9/L0m1yZFxLIjflcSpUo3hyzFxQgTS6klAazhWVWF77djX1V94YM2amPr6g==}
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -1637,6 +1652,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
+
+  free-shellrc@0.2.0: {}
 
   fsevents@2.3.3:
     optional: true

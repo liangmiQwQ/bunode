@@ -20,6 +20,8 @@ Its source code won't be published on crates.io. But its binary will be publishe
 
 The `@bunode/cli` is a tool to generate Bunode prefix. It includes two parts, a small bunode wrapper writtern in Node.js with `free-shellrc`, and the Rust binary CLI can run without any Node.js runtime.
 
+The CLI release publishes the JavaScript wrapper and platform-specific optional packages in lockstep. Each platform package contains both the native `bunode` CLI and the Bunode runtime exposed as `node`.
+
 ## Rule
 
 Vite+ is used as the project manager for JavaScript part. Use `vp install` to install dependencies, use `vp install -D` if the adden dependency can be bundled. Use `vp run` command to run commands in `package.json`. Vite+ is not the same as Vite, it includes Vitest (`vp test`), tsdown (`vp pack`), Oxlint (`vp lint`), Oxfmt (`vp fmt`) and task run, staged feature. Follow its document (node_modules/vite-plus/docs) to learn more. Do not add Vitest or tsdown separately unless Vite+ cannot provide the needed surface.

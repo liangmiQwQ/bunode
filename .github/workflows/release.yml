@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - packages/cli/package.json
+
+permissions: {}
+
+jobs:
+  check:
+    name: Check version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./packages/cli/package.json').version")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if npm view "@bunode/cli@${version}" version >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: check
+    if: needs.check.outputs.release == 'true'
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            musl: true
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            musl: true
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --package bunode --bins
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: bunode-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/bunode
+            target/${{ matrix.target }}/release/bunode.exe
+            target/${{ matrix.target }}/release/node
+            target/${{ matrix.target }}/release/node.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs:
+      - check
+      - build
+    if: needs.check.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          pattern: bunode-*
+
+      - name: Build JavaScript wrapper
+        run: vp pack
+        working-directory: packages/cli
+
+      - name: Prepare platform packages
+        run: node packages/cli/scripts/prepare-release.ts release-artifacts
+
+      - name: Publish platform packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in packages/cli/npm/*; do
+            npm publish "$package" --provenance --access public
+          done
+
+      - name: Publish JavaScript wrapper
+        run: npm publish packages/cli --provenance --access public

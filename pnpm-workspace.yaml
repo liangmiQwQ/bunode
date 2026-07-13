@@ -2,8 +2,10 @@ packages:
   - 'packages/*'
 catalog:
   '@liangmi/vp-config': ^0.3.0
-  '@typescript/native-preview': 7.0.0-dev.20260703.1
   '@types/node': ^26.1.0
+  '@typescript/native-preview': 7.0.0-dev.20260703.1
+  free-shellrc: ^0.2.0
+  picocolors: ^1.1.1
   typescript: ^6.0.3
   vite-plus: ^0.2.2
 
