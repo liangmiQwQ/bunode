@@ -1,27 +1,18 @@
 use std::{
   env, fs,
-  io::Cursor,
-  path::{Path, PathBuf},
+  fs::File,
+  path::{Component, Path, PathBuf},
+  process::Command,
 };
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
-use sha2::{Digest, Sha512};
 
 use super::{CliError, Result};
 
-const MAX_BUN_PACKAGE_SIZE: u64 = 512 * 1024 * 1024;
-
 #[derive(Deserialize)]
-struct PackageMetadata {
-  dist: PackageDistribution,
-}
-
-#[derive(Deserialize)]
-struct PackageDistribution {
-  integrity: String,
-  tarball: String,
+struct PackedPackage {
+  filename: PathBuf,
 }
 
 pub fn normalize_version(version: &str) -> Result<String> {
@@ -42,64 +33,90 @@ pub fn normalize_version(version: &str) -> Result<String> {
   Ok(version.to_owned())
 }
 
-pub fn download(version: &str, destination: &Path) -> Result<()> {
+pub fn download(version: &str, destination: &Path, source_prefix: &Path) -> Result<()> {
   let package = platform_package()?;
-  let registry = env::var("BUNODE_REGISTRY")
-    .or_else(|_| env::var("npm_config_registry"))
-    .unwrap_or_else(|_| "https://registry.npmjs.org".to_owned());
-  let metadata_url =
-    format!("{}/{}/{version}", registry.trim_end_matches('/'), package.replace('/', "%2F"));
-  let metadata = get_json::<PackageMetadata>(&metadata_url)?;
-  let archive = get_bytes(&metadata.dist.tarball)?;
-
-  verify_integrity(&archive, &metadata.dist.integrity)?;
-  extract_binary(&archive, destination)
+  let archive_directory = destination.with_extension("package");
+  fs::create_dir(&archive_directory)?;
+  let result = (|| {
+    let archive = npm_pack(package, version, source_prefix, &archive_directory)?;
+    extract_binary(&archive, destination)
+  })();
+  let _ = fs::remove_dir_all(archive_directory);
+  result
 }
 
-fn get_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T> {
-  let mut response = ureq::get(url)
-    .header("User-Agent", concat!("bunode/", env!("CARGO_PKG_VERSION")))
-    .call()
-    .map_err(|error| CliError::new(format!("failed to download {url}: {error}")))?;
-
-  response
-    .body_mut()
-    .read_json()
-    .map_err(|error| CliError::new(format!("invalid registry response from {url}: {error}")))
-}
-
-fn get_bytes(url: &str) -> Result<Vec<u8>> {
-  let mut response = ureq::get(url)
-    .header("User-Agent", concat!("bunode/", env!("CARGO_PKG_VERSION")))
-    .call()
-    .map_err(|error| CliError::new(format!("failed to download {url}: {error}")))?;
-
-  response
-    .body_mut()
-    .with_config()
-    .limit(MAX_BUN_PACKAGE_SIZE)
-    .read_to_vec()
-    .map_err(|error| CliError::new(format!("failed to read {url}: {error}")))
-}
-
-fn verify_integrity(archive: &[u8], integrity: &str) -> Result<()> {
-  let encoded = integrity
-    .strip_prefix("sha512-")
-    .ok_or_else(|| CliError::new("Bun package does not provide sha512 integrity"))?;
-  let expected = STANDARD
-    .decode(encoded)
-    .map_err(|error| CliError::new(format!("invalid Bun package integrity: {error}")))?;
-  let actual = Sha512::digest(archive);
-
-  if actual.as_slice() == expected {
-    Ok(())
-  } else {
-    Err(CliError::new("downloaded Bun package failed its integrity check"))
+fn npm_pack(
+  package: &str,
+  version: &str,
+  source_prefix: &Path,
+  destination: &Path,
+) -> Result<PathBuf> {
+  // 1. Resolve npm from the original prefix and bind its env-node shebang to the same prefix.
+  let npm = npm_executable(source_prefix);
+  if !npm.is_file() {
+    return Err(CliError::new(format!(
+      "npm is missing from the original Node.js prefix at {}",
+      npm.display()
+    )));
   }
+
+  let mut paths = vec![node_bin_directory(source_prefix)];
+  if let Some(path) = env::var_os("PATH") {
+    paths.extend(env::split_paths(&path));
+  }
+  let path = env::join_paths(paths)
+    .map_err(|error| CliError::new(format!("failed to prepare npm PATH: {error}")))?;
+
+  // 2. Keep npm isolated from project-level configuration while preserving user registry settings.
+  let mut command = Command::new(&npm);
+  command
+    .arg("pack")
+    .arg(format!("{package}@{version}"))
+    .args(["--json", "--ignore-scripts", "--pack-destination"])
+    .arg(destination)
+    .current_dir(destination)
+    .env("PATH", path)
+    .env("npm_config_update_notifier", "false");
+  if let Some(registry) = env::var_os("BUNODE_REGISTRY") {
+    command.env("npm_config_registry", registry);
+  }
+
+  let output = command
+    .output()
+    .map_err(|error| CliError::new(format!("failed to run {}: {error}", npm.display())))?;
+  if !output.status.success() {
+    return Err(CliError::new(format!(
+      "npm pack exited with {}: {}",
+      output.status,
+      String::from_utf8_lossy(&output.stderr).trim()
+    )));
+  }
+
+  // 3. Resolve the archive npm wrote without trusting a path outside the temporary directory.
+  let mut packages = serde_json::from_slice::<Vec<PackedPackage>>(&output.stdout)
+    .map_err(|error| CliError::new(format!("invalid npm pack response: {error}")))?;
+  if packages.len() != 1 {
+    return Err(CliError::new(format!(
+      "npm pack returned {} packages instead of one",
+      packages.len()
+    )));
+  }
+  let filename =
+    packages.pop().ok_or_else(|| CliError::new("npm pack returned no package"))?.filename;
+  let mut components = filename.components();
+  if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+    return Err(CliError::new("npm pack returned an invalid archive filename"));
+  }
+  let archive = destination.join(filename);
+  if !archive.is_file() {
+    return Err(CliError::new(format!("npm pack did not create {}", archive.display())));
+  }
+
+  Ok(archive)
 }
 
-fn extract_binary(archive: &[u8], destination: &Path) -> Result<()> {
-  let decoder = GzDecoder::new(Cursor::new(archive));
+fn extract_binary(archive: &Path, destination: &Path) -> Result<()> {
+  let decoder = GzDecoder::new(File::open(archive)?);
   let mut archive = tar::Archive::new(decoder);
   let expected =
     PathBuf::from(if cfg!(windows) { "package/bin/bun.exe" } else { "package/bin/bun" });
@@ -126,6 +143,14 @@ fn extract_binary(archive: &[u8], destination: &Path) -> Result<()> {
   }
 
   Err(CliError::new(format!("Bun package does not contain {}", expected.display())))
+}
+
+fn npm_executable(prefix: &Path) -> PathBuf {
+  if cfg!(windows) { prefix.join("npm.cmd") } else { prefix.join("bin/npm") }
+}
+
+fn node_bin_directory(prefix: &Path) -> PathBuf {
+  if cfg!(windows) { prefix.to_owned() } else { prefix.join("bin") }
 }
 
 fn platform_package() -> Result<&'static str> {

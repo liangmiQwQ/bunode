@@ -16,7 +16,7 @@ use sha2::{Digest, Sha512};
 
 /// A managed prefix can complete its full patch and revert lifecycle.
 ///
-/// The registry fixture exceeds 10 MiB, matching the size class of real Bun npm packages.
+/// The original prefix's npm fetches a registry fixture larger than 10 MiB.
 ///
 /// Spec: rfcs/bunode-cli.md
 #[test]
@@ -28,19 +28,32 @@ fn cli_should_patch_list_and_revert_a_prefix() {
   fs::create_dir_all(prefix.join("bin")).unwrap();
   fs::create_dir_all(&bunode_home).unwrap();
   write_executable(&prefix.join("bin/node"), "#!/bin/sh\nprintf 'v22.0.0\\n'\n");
+  write_executable(
+    &prefix.join("bin/npm"),
+    "#!/bin/sh\nprintf 'used\\n' > \"$BUNODE_TEST_NPM_MARKER\"\nPATH=\"$BUNODE_TEST_PATH\" exec npm \"$@\"\n",
+  );
   write_executable(&bunode_home.join("node"), "#!/bin/sh\nprintf 'v22.0.0+bun.1.2.3\\n'\n");
+  let npm_cache = root.join("npm-cache");
+  let npm_marker = root.join("npm-used");
+  fs::create_dir(&npm_cache).unwrap();
   let archive = bun_archive();
   let (registry, server) = serve_registry(archive);
 
   // 2. Patch through the public CLI and inspect its persisted, runnable result.
   let patched = bunode(&bunode_home)
     .env("BUNODE_REGISTRY", &registry)
+    .env("BUNODE_TEST_PATH", std::env::var_os("PATH").unwrap_or_default())
+    .env("BUNODE_TEST_NPM_MARKER", &npm_marker)
+    .env("npm_config_cache", npm_cache)
+    .env("npm_config_fetch_retries", "0")
+    .env("npm_config_fetch_timeout", "1000")
     .args(["patch", "1.2.3"])
     .arg(&prefix)
     .arg("--yes")
     .output()
     .unwrap();
   assert_success(&patched);
+  assert!(npm_marker.is_file());
   assert!(prefix.join("bun/node.old").is_file());
   assert!(prefix.join("bun/bun").is_file());
 
@@ -87,12 +100,13 @@ fn serve_registry(archive: Vec<u8>) -> (String, thread::JoinHandle<()>) {
   let listener = TcpListener::bind("127.0.0.1:0").unwrap();
   let address = listener.local_addr().unwrap();
   let registry = format!("http://{address}");
+  let package = platform_package();
+  let integrity = format!("sha512-{}", STANDARD.encode(Sha512::digest(&archive)));
   let metadata = format!(
-    "{{\"dist\":{{\"integrity\":\"sha512-{}\",\"tarball\":\"{registry}/tarball.tgz\"}}}}",
-    STANDARD.encode(Sha512::digest(&archive))
+    "{{\"name\":\"{package}\",\"dist-tags\":{{\"latest\":\"1.2.3\"}},\"versions\":{{\"1.2.3\":{{\"name\":\"{package}\",\"version\":\"1.2.3\",\"dist\":{{\"integrity\":\"{integrity}\",\"tarball\":\"{registry}/tarball.tgz\"}}}}}}}}"
   );
   let server = thread::spawn(move || {
-    for stream in listener.incoming().take(2) {
+    for stream in listener.incoming().take(3) {
       let mut stream = stream.unwrap();
       let mut request = [0_u8; 4096];
       let length = stream.read(&mut request).unwrap();
@@ -113,6 +127,18 @@ fn serve_registry(archive: Vec<u8>) -> (String, thread::JoinHandle<()>) {
   });
 
   (registry, server)
+}
+
+fn platform_package() -> &'static str {
+  match (std::env::consts::OS, std::env::consts::ARCH) {
+    ("macos", "aarch64") => "@oven/bun-darwin-aarch64",
+    ("macos", "x86_64") => "@oven/bun-darwin-x64",
+    ("linux", "aarch64") if cfg!(target_env = "musl") => "@oven/bun-linux-aarch64-musl",
+    ("linux", "aarch64") => "@oven/bun-linux-aarch64",
+    ("linux", "x86_64") if cfg!(target_env = "musl") => "@oven/bun-linux-x64-musl",
+    ("linux", "x86_64") => "@oven/bun-linux-x64",
+    (os, arch) => panic!("unsupported test platform {os}-{arch}"),
+  }
 }
 
 fn write_executable(path: &Path, content: &str) {

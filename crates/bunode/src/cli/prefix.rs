@@ -45,7 +45,7 @@ pub fn patch(options: &PatchOptions) -> Result<()> {
 
   // 1. Download and validate Bun before changing the prefix.
   let result = (|| {
-    download::download(&version, &download_path)?;
+    download::download(&version, &download_path, &source_prefix)?;
     let downloaded_version = read_output(&download_path, &["--version"])?;
     if downloaded_version.trim_start_matches('v') != version {
       return Err(CliError::new(format!(
