@@ -58,7 +58,7 @@ Prompt users to confirm whether to revert the Bunode's change. There are two sty
 
 ### `bunode list`
 
-List the recorded Bunode prefixes. In the output, it should contain the Node's version (`node -v`, printed by Bunode), Bunode's version(bunode itself), original Node.js version and Bunode prefix's path.
+List the recorded Bunode prefixes. In the output, it should contain the Node's version (`node -v`, printed by Bunode), Bunode's version(bunode itself), original Node.js version, the prefix type (from patching the prefix or copying) and Bunode prefix's path.
 
 ### `bunode implode`
 
