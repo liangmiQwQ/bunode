@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { platform } from 'node:process'
 import { pathToFileURL } from 'node:url'
 
 import { expect, it, vi } from 'vite-plus/test'
@@ -13,7 +14,6 @@ const fixture = vi.hoisted(() => ({
   binDirectory: '',
   bunodeBinary: '',
   nodeBinary: '',
-  outputPath: '',
   syncCalls: 0
 }))
 
@@ -23,15 +23,9 @@ vi.mock(import('./install.ts'), async importOriginal => {
   return {
     ...original,
     getBunodeInstallation: () => fixture,
-    syncBunodeInstallation: async () => {
+    syncBunodeInstallation: () => {
       fixture.syncCalls += 1
-      await writeFile(
-        fixture.bunodeBinary,
-        `#!/bin/sh\nprintf native > '${fixture.outputPath}'\n`,
-        { mode: 0o755 }
-      )
-      await chmod(fixture.bunodeBinary, 0o755)
-      return fixture
+      return Promise.resolve(fixture)
     }
   }
 })
@@ -45,11 +39,13 @@ it('bootstraps a missing native CLI while a shell restart is pending', async () 
     `.free-shellrc-${createHash('sha256').update(packageName).digest('hex').slice(0, 24)}.restart`
   )
   const originalShell = process.env.SHELL
+  const originalArgv = process.argv
+  const originalExitCode = process.exitCode
+  const extension = platform === 'win32' ? '.exe' : ''
 
   fixture.binDirectory = join(root, 'home/bin')
-  fixture.bunodeBinary = join(root, 'home/bunode')
+  fixture.bunodeBinary = resolve(import.meta.dirname, `../../../target/debug/bunode${extension}`)
   fixture.nodeBinary = join(root, 'home/node')
-  fixture.outputPath = join(root, 'native-output')
   fixture.syncCalls = 0
 
   try {
@@ -59,13 +55,17 @@ it('bootstraps a missing native CLI while a shell restart is pending', async () 
     await writeFile(entryPath, '')
     await writeFile(restartPath, '')
     process.env.SHELL = '/bin/zsh'
+    process.argv = [process.execPath, entryPath, '--version']
+    process.exitCode = undefined
 
     await runCli(pathToFileURL(entryPath))
 
     expect(fixture.syncCalls).toBe(1)
-    await expect(readFile(fixture.outputPath, 'utf8')).resolves.toBe('native')
+    expect(process.exitCode).toBe(0)
   } finally {
     process.env.SHELL = originalShell
+    process.argv = originalArgv
+    process.exitCode = originalExitCode
     await rm(restartPath, { force: true })
     await rm(root, { force: true, recursive: true })
   }
