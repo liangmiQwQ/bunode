@@ -104,7 +104,6 @@ jobs:
       - build
     if: needs.check.outputs.release == 'true'
     runs-on: ubuntu-latest
-    environment: release
     permissions:
       contents: read
       id-token: write
