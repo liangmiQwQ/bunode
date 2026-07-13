@@ -1,10 +1,12 @@
 // @env node
 
 import { execFile, spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 
 import { versionBump } from 'bumpp'
+
+import { platformPackages } from '../packages/cli/src/platform.ts'
 
 const baseBranch = 'main'
 // Node's promisify accepts the value-returning execFile callback despite the generic void constraint.
@@ -32,14 +34,22 @@ async function createRelease(nextVersion: string | undefined): Promise<void> {
 
   // 2. Update and validate the lockstep npm and Rust versions.
   await assertVersionsMatch()
+  const manifestPath = 'packages/cli/package.json'
+  const originalManifest = await readFile(manifestPath, 'utf8')
   const result = await versionBump({
     release: nextVersion,
-    files: ['packages/cli/package.json'],
+    files: [manifestPath],
     commit: false,
     tag: false,
     push: false,
     confirm: false
   })
+  try {
+    await assertVersionAvailable(result.newVersion)
+  } catch (error) {
+    await writeFile(manifestPath, originalManifest)
+    throw error
+  }
   const releaseBranch = `release/v${result.newVersion}`
   const releaseTitle = `chore(release): v${result.newVersion}`
   await run('cargo', ['set-version', result.newVersion, '--workspace', '--offline'])
@@ -82,6 +92,30 @@ async function createRelease(nextVersion: string | undefined): Promise<void> {
     '@me'
   ])
   process.stdout.write(`${pullRequestUrl}\n`)
+}
+
+async function assertVersionAvailable(version: string): Promise<void> {
+  const packageNames = ['@bunode/cli', ...platformPackages.map(({ name }) => name)]
+  const occupiedPackages: string[] = []
+
+  for (const packageName of packageNames) {
+    const packageUrl = `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`
+    const response = await fetch(packageUrl)
+
+    if (response.ok) {
+      occupiedPackages.push(packageName)
+    } else if (response.status !== 404) {
+      throw new Error(
+        `Cannot check ${packageName}@${version} on npm: ${response.status} ${response.statusText}`
+      )
+    }
+  }
+
+  if (occupiedPackages.length > 0) {
+    throw new Error(
+      `Release version ${version} is already published for: ${occupiedPackages.join(', ')}`
+    )
+  }
 }
 
 async function assertVersionsMatch(): Promise<void> {
