@@ -13,6 +13,7 @@ pub(super) struct OptionSpec {
   pub(super) short: Option<char>,
   pub(super) value: ValueMode,
   pub(super) node_options_allowed: bool,
+  pub(super) exec_argv: bool,
   pub(super) help: Option<OptionHelp>,
 }
 
@@ -62,6 +63,7 @@ macro_rules! option_spec {
       short: $short,
       value: $value,
       node_options_allowed: option_spec!(@node_options_allowed $source),
+      exec_argv: option_spec!(@exec_argv $source),
       help: Some(OptionHelp {
         section: option_spec!(@help_section $source),
         row: HelpRow { left: $left, description: $description },
@@ -72,6 +74,10 @@ macro_rules! option_spec {
   (@node_options_allowed node_cli) => { false };
   (@node_options_allowed node) => { true };
   (@node_options_allowed bun) => { false };
+  (@exec_argv command) => { true };
+  (@exec_argv node_cli) => { true };
+  (@exec_argv node) => { true };
+  (@exec_argv bun) => { false };
   (@help_section command) => { HelpSection::Node };
   (@help_section node_cli) => { HelpSection::Node };
   (@help_section node) => { HelpSection::Node };
@@ -127,6 +133,14 @@ pub(super) const OPTION_SPECS: &[OptionSpec] = &[
     "--import=...",
     "ES module to preload (option can be repeated)",
   ),
+  OptionSpec {
+    long: &["--experimental-import-meta-resolve"],
+    short: None,
+    value: ValueMode::None,
+    node_options_allowed: true,
+    exec_argv: true,
+    help: None,
+  },
   option_spec!(
     node,
     ["--inspect"],
