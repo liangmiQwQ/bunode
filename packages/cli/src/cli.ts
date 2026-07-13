@@ -20,23 +20,25 @@ export async function runCli(entryUrl: string | URL): Promise<void> {
     return
   }
 
+  let bunodeBinary: string
   try {
-    const installation = await syncBunodeInstallation(entryPath)
-    const changed = await installShellrc(shell =>
-      createPathCommand(shell, installation.binDirectory)
-    )
+    const { binDirectory, bunodeBinary: installedBinary } = await syncBunodeInstallation(entryPath)
+    const changed = await installShellrc(shell => createPathCommand(shell, binDirectory))
 
     if (changed) {
       process.stderr.write(
-        `${pc.green('Bunode is ready.')} Restart this shell to use ${installation.binDirectory}.\n`
+        `${pc.green('Bunode is ready.')} Restart this shell to use ${binDirectory}.\n`
       )
     }
 
-    await runBinary(installation.bunodeBinary)
+    bunodeBinary = installedBinary
   } catch (error) {
     printWarning(`JavaScript wrapper failed: ${getErrorMessage(error)}`)
     await runFallback()
+    return
   }
+
+  await runBinary(bunodeBinary)
 }
 
 async function runFallback(): Promise<void> {

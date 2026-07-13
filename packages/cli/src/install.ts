@@ -8,6 +8,7 @@ import {
   readFile,
   rename,
   rm,
+  stat,
   writeFile
 } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -21,7 +22,6 @@ import { findPlatformPackageDirectory } from './platform.ts'
 export interface BunodeInstallation {
   binDirectory: string
   bunodeBinary: string
-  homeDirectory: string
   nodeBinary: string
 }
 
@@ -74,7 +74,6 @@ export function getBunodeInstallation(userHome = homedir()): BunodeInstallation 
   return {
     binDirectory: join(homeDirectory, 'bin'),
     bunodeBinary: join(homeDirectory, `bunode${extension}`),
-    homeDirectory,
     nodeBinary: join(homeDirectory, `node${extension}`)
   }
 }
@@ -92,6 +91,9 @@ export function createPathCommand(shell: Shell, binDirectory: string): string {
 
 export async function isExecutable(path: string): Promise<boolean> {
   try {
+    if (!(await stat(path)).isFile()) {
+      return false
+    }
     await access(path, isWindows ? constants.F_OK : constants.X_OK)
     return true
   } catch {

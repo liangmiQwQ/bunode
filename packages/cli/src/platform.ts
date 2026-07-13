@@ -2,9 +2,8 @@ import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { arch, platform, report } from 'node:process'
 
-export interface PlatformPackage {
+interface PlatformPackage {
   arch: NodeJS.Architecture
-  cpu: string
   libc?: 'glibc' | 'musl'
   name: string
   os: NodeJS.Platform
@@ -14,21 +13,18 @@ export interface PlatformPackage {
 export const platformPackages: PlatformPackage[] = [
   {
     arch: 'arm64',
-    cpu: 'arm64',
     name: '@bunode/cli-darwin-arm64',
     os: 'darwin',
     target: 'aarch64-apple-darwin'
   },
   {
     arch: 'x64',
-    cpu: 'x64',
     name: '@bunode/cli-darwin-x64',
     os: 'darwin',
     target: 'x86_64-apple-darwin'
   },
   {
     arch: 'arm64',
-    cpu: 'arm64',
     libc: 'glibc',
     name: '@bunode/cli-linux-arm64-gnu',
     os: 'linux',
@@ -36,7 +32,6 @@ export const platformPackages: PlatformPackage[] = [
   },
   {
     arch: 'arm64',
-    cpu: 'arm64',
     libc: 'musl',
     name: '@bunode/cli-linux-arm64-musl',
     os: 'linux',
@@ -44,7 +39,6 @@ export const platformPackages: PlatformPackage[] = [
   },
   {
     arch: 'x64',
-    cpu: 'x64',
     libc: 'glibc',
     name: '@bunode/cli-linux-x64-gnu',
     os: 'linux',
@@ -52,7 +46,6 @@ export const platformPackages: PlatformPackage[] = [
   },
   {
     arch: 'x64',
-    cpu: 'x64',
     libc: 'musl',
     name: '@bunode/cli-linux-x64-musl',
     os: 'linux',
@@ -60,21 +53,19 @@ export const platformPackages: PlatformPackage[] = [
   },
   {
     arch: 'arm64',
-    cpu: 'arm64',
     name: '@bunode/cli-win32-arm64-msvc',
     os: 'win32',
     target: 'aarch64-pc-windows-msvc'
   },
   {
     arch: 'x64',
-    cpu: 'x64',
     name: '@bunode/cli-win32-x64-msvc',
     os: 'win32',
     target: 'x86_64-pc-windows-msvc'
   }
 ]
 
-export function findPlatformPackage(): PlatformPackage {
+function findPlatformPackage(): PlatformPackage {
   const libc = platform === 'linux' ? detectLibc() : undefined
   const selected = platformPackages.find(
     item => item.os === platform && item.arch === arch && item.libc === libc

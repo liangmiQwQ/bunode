@@ -39,7 +39,7 @@ for (const platformPackage of platformPackages) {
     license: 'MIT',
     repository: manifest.repository,
     os: [platformPackage.os],
-    cpu: [platformPackage.cpu],
+    cpu: [platformPackage.arch],
     ...(platformPackage.libc ? { libc: [platformPackage.libc] } : {}),
     files,
     exports: {

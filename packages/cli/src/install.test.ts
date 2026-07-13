@@ -6,7 +6,7 @@ import { platform } from 'node:process'
 
 import { expect, it } from 'vite-plus/test'
 
-import { createPathCommand, syncBunodeInstallation } from './install.ts'
+import { createPathCommand, isExecutable, syncBunodeInstallation } from './install.ts'
 
 const isWindows = platform === 'win32'
 
@@ -16,6 +16,10 @@ it('uses the host PATH syntax for PowerShell integration', () => {
 
   expect(command).toContain(`${binDirectory}${delimiter}`)
   expect(command).toContain(isWindows ? '$env:Path' : '$env:PATH')
+})
+
+it('does not treat a directory as an installed native CLI', async () => {
+  await expect(isExecutable(tmpdir())).resolves.toBeFalsy()
 })
 
 it(
@@ -39,10 +43,9 @@ it(
       await expect(run(installation.nodeBinary, ['--version'])).resolves.toContain(process.version)
       await expect(run(launcher, ['--version'])).resolves.toContain('javascript wrapper')
 
-      const brokenBin = join(root, 'broken-bin')
-      await mkdir(brokenBin)
-      await writeBrokenNode(brokenBin)
-      const fallback = await run(launcher, ['--version'], brokenBin)
+      await copyFile(join(import.meta.dirname, '../bin/bunode.mjs'), entryPath)
+      const fallback = await run(launcher, ['--version'])
+      expect(fallback).toContain('Bunode failed')
       expect(fallback).toContain('JavaScript wrapper unavailable')
       expect(fallback).toContain(process.version)
     } finally {
@@ -66,26 +69,14 @@ async function copyExecutable(path: string): Promise<void> {
   }
 }
 
-async function writeBrokenNode(directory: string): Promise<void> {
-  const path = join(directory, isWindows ? 'node.cmd' : 'node')
-  await writeFile(path, isWindows ? '@exit /b 1\r\n' : '#!/bin/sh\nexit 1\n')
-  if (!isWindows) {
-    await chmod(path, 0o755)
-  }
-}
-
-function run(
-  command: string,
-  args: string[],
-  pathPrefix = dirname(process.execPath)
-): Promise<string> {
+function run(command: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const executable = isWindows && command.endsWith('.ps1') ? 'pwsh' : command
     const executableArgs = executable === 'pwsh' ? ['-NoProfile', '-File', command, ...args] : args
     const child = spawn(executable, executableArgs, {
       env: {
         ...process.env,
-        PATH: `${pathPrefix}${delimiter}${process.env.PATH ?? ''}`
+        PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`
       }
     })
     let output = ''

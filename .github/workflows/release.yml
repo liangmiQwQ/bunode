@@ -110,15 +110,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
         with:
+          cache: true
           node-version: 22.18.0
-          registry-url: https://registry.npmjs.org
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          run-install: true
 
       - name: Download binaries
         uses: actions/download-artifact@v4
@@ -127,7 +124,7 @@ jobs:
           pattern: bunode-*
 
       - name: Build JavaScript wrapper
-        run: pnpm exec vp pack
+        run: vp pack
         working-directory: packages/cli
 
       - name: Prepare platform packages

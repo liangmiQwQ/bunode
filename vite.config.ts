@@ -24,7 +24,7 @@ export default base({
       },
       check: {
         command: [
-          'node scripts/prepare-release.ts --check',
+          'node scripts/release.ts --check',
           'vpr ccheck',
           'cargo fmt --check',
           'cargo clippy --workspace --all-targets -- -D warnings'
