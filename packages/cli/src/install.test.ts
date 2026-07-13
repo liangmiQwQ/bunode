@@ -1,0 +1,79 @@
+import { spawn } from 'node:child_process'
+import { chmod, copyFile, mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { delimiter, dirname, join } from 'node:path'
+import { platform } from 'node:process'
+
+import { expect, it } from 'vite-plus/test'
+
+import { syncBunodeInstallation } from './install.ts'
+
+const isWindows = platform === 'win32'
+
+it('keeps the native CLI usable when the JavaScript wrapper disappears', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'bunode-cli-'))
+  const userHome = join(root, 'home')
+  const packageDirectory = join(root, 'platform-package')
+  const entryPath = join(root, 'bunode-entry.mjs')
+
+  try {
+    await mkdir(packageDirectory, { recursive: true })
+    await copyExecutable(join(packageDirectory, isWindows ? 'bunode.exe' : 'bunode'))
+    await copyExecutable(join(packageDirectory, isWindows ? 'node.exe' : 'node'))
+    await writeFile(entryPath, `process.stdout.write('javascript wrapper\\n')\n`)
+
+    const installation = await syncBunodeInstallation(entryPath, userHome, packageDirectory)
+    const launcher = join(installation.binDirectory, isWindows ? 'bunode.cmd' : 'bunode')
+
+    await expect(
+      run(installation.nodeBinary, ['-e', `process.stdout.write('bunode node\\n')`])
+    ).resolves.toContain('bunode node')
+    await expect(run(launcher, ['-e', `process.stdout.write('native cli\\n')`])).resolves.toContain(
+      'javascript wrapper'
+    )
+
+    await unlink(entryPath)
+    const fallback = await run(launcher, ['-e', `process.stdout.write('native cli\\n')`])
+    expect(fallback).toContain('JavaScript wrapper unavailable')
+    expect(fallback).toContain('native cli')
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
+})
+
+async function copyExecutable(path: string): Promise<void> {
+  await copyFile(process.execPath, path)
+  if (!isWindows) {
+    await chmod(path, 0o755)
+  }
+}
+
+function run(command: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env: {
+        ...process.env,
+        PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`
+      },
+      shell: isWindows
+    })
+    let output = ''
+
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', chunk => {
+      output += chunk
+    })
+    child.stderr.on('data', chunk => {
+      output += chunk
+    })
+    child.on('error', reject)
+    child.on('close', code => {
+      if (code === 0) {
+        resolve(output)
+        return
+      }
+      reject(new Error(`${command} exited with ${code ?? 1}: ${output}`))
+    })
+  })
+}
