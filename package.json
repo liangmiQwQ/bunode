@@ -2,12 +2,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare-release": "node scripts/prepare-release.ts",
     "ready": "vpr test && vpr check"
   },
   "devDependencies": {
     "@liangmi/vp-config": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
+    "bumpp": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   },

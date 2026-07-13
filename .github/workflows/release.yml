@@ -105,7 +105,7 @@ jobs:
     if: needs.check.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v5
@@ -151,3 +151,9 @@ jobs:
       - name: Publish JavaScript wrapper
         working-directory: packages/cli
         run: npm publish --tag "${{ needs.check.outputs.tag }}" --provenance --access public
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: gh release create "v${VERSION}" --generate-notes --target "${GITHUB_SHA}" --title "v${VERSION}"
