@@ -74,6 +74,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes musl-tools
 
       - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: cargo build --release --target ${{ matrix.target }} --package bunode --bins
 
       - name: Upload binaries
@@ -118,11 +121,14 @@ jobs:
           pattern: bunode-*
 
       - name: Build JavaScript wrapper
-        run: vp pack
+        run: pnpm exec vp pack
         working-directory: packages/cli
 
       - name: Prepare platform packages
         run: node packages/cli/scripts/prepare-release.ts release-artifacts
+
+      - name: Update npm
+        run: npm install --global npm@latest
 
       - name: Publish platform packages
         shell: bash
