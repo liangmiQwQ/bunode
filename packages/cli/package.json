@@ -13,7 +13,7 @@
     "url": "git+https://github.com/liangmiQwQ/bunode.git"
   },
   "bin": {
-    "bunode": "./bin/bunode.mjs"
+    "bunode": "bin/bunode.mjs"
   },
   "files": [
     "dist",

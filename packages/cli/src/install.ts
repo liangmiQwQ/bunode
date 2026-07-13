@@ -11,7 +11,7 @@ import {
   writeFile
 } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { platform } from 'node:process'
 
 import type { Shell } from 'free-shellrc'
@@ -84,7 +84,8 @@ export function createPathCommand(shell: Shell, binDirectory: string): string {
     return `fish_add_path --prepend --move ${quoteFish(binDirectory)}`
   }
   if (shell === 'powershell' || shell === 'pwsh') {
-    return `$env:Path = ${quotePowerShell(`${binDirectory};`)} + $env:Path`
+    const pathName = isWindows ? 'Path' : 'PATH'
+    return `$env:${pathName} = ${quotePowerShell(`${binDirectory}${delimiter}`)} + $env:${pathName}`
   }
   return `export PATH=${quotePosix(binDirectory)}:"$PATH"`
 }
@@ -156,9 +157,17 @@ async function replaceFile(source: string, destination: string): Promise<void> {
 }
 
 function createPosixLauncher(entryPath: string, nativePath: string): string {
+  const markerPrefix = join(dirname(nativePath), '.wrapper-ready-')
   return `#!/bin/sh
 if [ -f ${quotePosix(entryPath)} ] && command -v node >/dev/null 2>&1; then
-  exec node ${quotePosix(entryPath)} "$@"
+  marker=${quotePosix(markerPrefix)}$$
+  rm -f "$marker"
+  BUNODE_WRAPPER_MARKER="$marker" node ${quotePosix(entryPath)} "$@"
+  status=$?
+  if [ "$status" -eq 0 ] || [ -f "$marker" ]; then
+    rm -f "$marker"
+    exit "$status"
+  fi
 fi
 printf '%s\n' 'bunode: JavaScript wrapper unavailable; using installed native CLI.' >&2
 exec ${quotePosix(nativePath)} "$@"
@@ -167,12 +176,22 @@ exec ${quotePosix(nativePath)} "$@"
 
 function createCommandPromptLauncher(entryPath: string, nativePath: string): string {
   return `@echo off\r
-setlocal\r
+setlocal EnableDelayedExpansion\r
 if exist ${quoteCommandPrompt(entryPath)} (\r
   where node >nul 2>nul\r
   if not errorlevel 1 (\r
+    set "BUNODE_WRAPPER_MARKER=${quoteCommandPrompt(join(dirname(nativePath), '.wrapper-ready-%RANDOM%-%RANDOM%')).slice(1, -1)}"\r
+    del /q "!BUNODE_WRAPPER_MARKER!" >nul 2>nul\r
     node ${quoteCommandPrompt(entryPath)} %*\r
-    exit /b %errorlevel%\r
+    set "BUNODE_WRAPPER_STATUS=!errorlevel!"\r
+    if "!BUNODE_WRAPPER_STATUS!"=="0" (\r
+      del /q "!BUNODE_WRAPPER_MARKER!" >nul 2>nul\r
+      exit /b 0\r
+    )\r
+    if exist "!BUNODE_WRAPPER_MARKER!" (\r
+      del /q "!BUNODE_WRAPPER_MARKER!" >nul 2>nul\r
+      exit /b !BUNODE_WRAPPER_STATUS!\r
+    )\r
   )\r
 )\r
 >&2 echo bunode: JavaScript wrapper unavailable; using installed native CLI.\r
@@ -183,8 +202,15 @@ exit /b %errorlevel%\r
 
 function createPowerShellLauncher(entryPath: string, nativePath: string): string {
   return `if ((Test-Path -LiteralPath ${quotePowerShell(entryPath)}) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+  $marker = Join-Path ${quotePowerShell(dirname(nativePath))} ('.wrapper-ready-' + [guid]::NewGuid().ToString('N'))
+  $env:BUNODE_WRAPPER_MARKER = $marker
   & node ${quotePowerShell(entryPath)} @args
-  exit $LASTEXITCODE
+  $status = $LASTEXITCODE
+  Remove-Item Env:BUNODE_WRAPPER_MARKER -ErrorAction SilentlyContinue
+  if (($status -eq 0) -or (Test-Path -LiteralPath $marker)) {
+    Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+    exit $status
+  }
 }
 [Console]::Error.WriteLine('bunode: JavaScript wrapper unavailable; using installed native CLI.')
 & ${quotePowerShell(nativePath)} @args

@@ -1,14 +1,22 @@
 import { spawn } from 'node:child_process'
-import { chmod, copyFile, link, mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { platform } from 'node:process'
 
 import { expect, it } from 'vite-plus/test'
 
-import { syncBunodeInstallation } from './install.ts'
+import { createPathCommand, syncBunodeInstallation } from './install.ts'
 
 const isWindows = platform === 'win32'
+
+it('uses the host PATH syntax for PowerShell integration', () => {
+  const binDirectory = join('bunode home', 'bin')
+  const command = createPathCommand('pwsh', binDirectory)
+
+  expect(command).toContain(`${binDirectory}${delimiter}`)
+  expect(command).toContain(isWindows ? '$env:Path' : '$env:PATH')
+})
 
 it(
   'keeps the native CLI usable when the JavaScript wrapper disappears',
@@ -31,8 +39,10 @@ it(
       await expect(run(installation.nodeBinary, ['--version'])).resolves.toContain(process.version)
       await expect(run(launcher, ['--version'])).resolves.toContain('javascript wrapper')
 
-      await unlink(entryPath)
-      const fallback = await run(launcher, ['--version'])
+      const brokenBin = join(root, 'broken-bin')
+      await mkdir(brokenBin)
+      await writeBrokenNode(brokenBin)
+      const fallback = await run(launcher, ['--version'], brokenBin)
       expect(fallback).toContain('JavaScript wrapper unavailable')
       expect(fallback).toContain(process.version)
     } finally {
@@ -56,14 +66,26 @@ async function copyExecutable(path: string): Promise<void> {
   }
 }
 
-function run(command: string, args: string[]): Promise<string> {
+async function writeBrokenNode(directory: string): Promise<void> {
+  const path = join(directory, isWindows ? 'node.cmd' : 'node')
+  await writeFile(path, isWindows ? '@exit /b 1\r\n' : '#!/bin/sh\nexit 1\n')
+  if (!isWindows) {
+    await chmod(path, 0o755)
+  }
+}
+
+function run(
+  command: string,
+  args: string[],
+  pathPrefix = dirname(process.execPath)
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const executable = isWindows && command.endsWith('.ps1') ? 'pwsh' : command
     const executableArgs = executable === 'pwsh' ? ['-NoProfile', '-File', command, ...args] : args
     const child = spawn(executable, executableArgs, {
       env: {
         ...process.env,
-        PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}`
+        PATH: `${pathPrefix}${delimiter}${process.env.PATH ?? ''}`
       }
     })
     let output = ''

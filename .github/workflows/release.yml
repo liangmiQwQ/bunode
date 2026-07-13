@@ -17,6 +17,7 @@ jobs:
       contents: read
     outputs:
       release: ${{ steps.version.outputs.release }}
+      tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
@@ -27,6 +28,12 @@ jobs:
           set -euo pipefail
           version=$(node -p "require('./packages/cli/package.json').version")
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          tag=latest
+          if [[ "$version" == *-* ]]; then
+            tag=${version#*-}
+            tag=${tag%%.*}
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           if npm view "@bunode/cli@${version}" version >/dev/null 2>&1; then
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
@@ -128,15 +135,20 @@ jobs:
         run: node packages/cli/scripts/prepare-release.ts release-artifacts
 
       - name: Update npm
+        working-directory: ${{ runner.temp }}
         run: npm install --global npm@latest
 
       - name: Publish platform packages
         shell: bash
+        working-directory: packages/cli/npm
+        env:
+          NPM_TAG: ${{ needs.check.outputs.tag }}
         run: |
           set -euo pipefail
-          for package in packages/cli/npm/*; do
-            npm publish "$package" --provenance --access public
+          for package in */; do
+            (cd "$package" && npm publish --tag "$NPM_TAG" --provenance --access public)
           done
 
       - name: Publish JavaScript wrapper
-        run: npm publish packages/cli --provenance --access public
+        working-directory: packages/cli
+        run: npm publish --tag "${{ needs.check.outputs.tag }}" --provenance --access public

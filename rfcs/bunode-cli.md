@@ -16,11 +16,11 @@ For calling `free-shellrc`, we only inject shellrc for the current using shell. 
 
 ## Integration
 
-We use a `napi-rs`-like style, and npm's optional dependencies to release the native Bunode cli and bunode(`node`) binary. They should be put in one package, and all packages' versions should be the same.
+We use a `napi-rs`-like style, and npm's optional dependencies to release the native Bunode cli and bunode(`node`) binary. They should be put in one package, and all packages' versions should be the same. The platform package does not contain a Bun runtime.
 
 The bunode cli's directory is under `~/.bunode`, and `~/.bunode/bin` will be in `PATH` (shellrc integration). The only thing in it is a executable script (`.sh` on Unix, `.cmd` and `.ps1` on Windows), it calls bunode JavaScript cli wrapper, which hardlinks (or failback to copy) the real native bunode binary to `~/.bunode/bunode[.extension]`, and finally call the real native bunode cli.
 
-The bunode core binary (`node`) should be also linked or copied.
+The bunode core binary (`node`) should be also linked or copied to `~/.bunode/node[.extension]`. This is a stored template for the native CLI, not a runnable `node` exposed through `~/.bunode/bin`. A future `bunode patch` call downloads the requested Bun version and installs the stored wrapper and Bun together in the target prefix layout described by the wrapper-core RFC.
 
 If the JavaScript wrapper fails—for example, because Node.js or the global package installation is unavailable—the launcher prints a warning and continues by executing the previously installed native Bunode CLI.
 

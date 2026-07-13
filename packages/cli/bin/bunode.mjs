@@ -1,4 +1,15 @@
 #!/usr/bin/env node
+const wrapperMarker = process.env.BUNODE_WRAPPER_MARKER
+if (wrapperMarker) {
+  delete process.env.BUNODE_WRAPPER_MARKER
+  try {
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(wrapperMarker, '')
+  } catch {
+    // The launcher treats a missing marker as a wrapper startup failure.
+  }
+}
+
 try {
   const { runCli } = await import('../dist/cli.mjs')
   await runCli(import.meta.url)
