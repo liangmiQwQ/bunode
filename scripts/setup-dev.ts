@@ -21,7 +21,7 @@ const nodePath = isWindows
 const bunPath = resolve(projectRoot, '.dev/bun', isWindows ? 'bun.exe' : 'bun')
 
 await copyExecutable(
-  resolve(projectRoot, 'target/debug', isWindows ? 'bunode.exe' : 'bunode'),
+  resolve(projectRoot, 'target/debug', isWindows ? 'node.exe' : 'node'),
   nodePath
 )
 await installBun(normalizeBunVersion(rawBunVersion), getBunVersionOutput(rawBunVersion), bunPath)

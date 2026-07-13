@@ -13,14 +13,19 @@
     "url": "git+https://github.com/liangmiQwQ/bunode.git"
   },
   "bin": {
-    "bunode": "./bin/bunode.mjs"
+    "bunode": "bin/bunode.mjs"
   },
   "files": [
     "dist",
     "bin"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "free-shellrc": "catalog:",
+    "picocolors": "catalog:"
   }
 }

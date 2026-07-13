@@ -11,6 +11,14 @@ rust-version.workspace = true
 description.workspace = true
 publish = false
 
+[[bin]]
+name = "node"
+path = "src/main.rs"
+
+[[bin]]
+name = "bunode"
+path = "src/cli.rs"
+
 [build-dependencies]
 oxc_allocator = { workspace = true }
 oxc_codegen = { workspace = true }
