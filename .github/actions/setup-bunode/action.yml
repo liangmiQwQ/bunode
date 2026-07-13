@@ -1,5 +1,7 @@
-name: Setup Bunode
-description: Build and select the Bunode runtime declared by this project
+# Temporary bootstrap while this branch cannot install its own unpublished @bunode/cli package.
+# Replace this action with the published Bunode install flow after the first native CLI release.
+name: Bootstrap Bunode for CI
+description: Bootstrap this branch's unpublished Bunode runtime for project CI
 
 runs:
   using: composite
@@ -27,6 +29,10 @@ runs:
     - name: Install dependencies with Bunode
       shell: bash
       run: vp env exec --node "${{ steps.runtime.outputs.runtime-version }}" vp install
+
+    - name: Select Bunode runtime
+      shell: bash
+      run: vp env use "${{ steps.runtime.outputs.runtime-version }}"
 
     - name: Verify Bunode runtime
       shell: bash
