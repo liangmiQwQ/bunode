@@ -14,15 +14,27 @@ import {
 export async function runCli(entryUrl: string | URL): Promise<void> {
   const entryPath = fileURLToPath(entryUrl)
   const diagnostic = shellrcGuard(entryUrl)
-  if (diagnostic) {
-    printWarning(diagnostic.message)
+
+  let binDirectory: string
+  let bunodeBinary: string
+  try {
+    const installation = await syncBunodeInstallation(entryPath)
+    const { binDirectory: installedBinDirectory, bunodeBinary: installedBinary } = installation
+    binDirectory = installedBinDirectory
+    bunodeBinary = installedBinary
+  } catch (error) {
+    printWarning(`JavaScript wrapper failed: ${getErrorMessage(error)}`)
     await runFallback()
     return
   }
 
-  let bunodeBinary: string
+  if (diagnostic) {
+    printWarning(diagnostic.message)
+    await runBinary(bunodeBinary)
+    return
+  }
+
   try {
-    const { binDirectory, bunodeBinary: installedBinary } = await syncBunodeInstallation(entryPath)
     const changed = await installShellrc(shell => createPathCommand(shell, binDirectory))
 
     if (changed) {
@@ -30,8 +42,6 @@ export async function runCli(entryUrl: string | URL): Promise<void> {
         `${pc.green('Bunode is ready.')} Restart this shell to use ${binDirectory}.\n`
       )
     }
-
-    bunodeBinary = installedBinary
   } catch (error) {
     printWarning(`JavaScript wrapper failed: ${getErrorMessage(error)}`)
     await runFallback()

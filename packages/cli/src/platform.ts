@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { arch, platform, report } from 'node:process'
 
 interface PlatformPackage {
@@ -85,6 +86,17 @@ export function findPlatformPackageDirectory(): string {
   try {
     return dirname(require.resolve(`${selected.name}/package.json`))
   } catch (error) {
+    const developmentRoot = resolve(import.meta.dirname, '../../..')
+    const developmentDirectory = join(developmentRoot, 'target/debug')
+    const extension = platform === 'win32' ? '.exe' : ''
+    if (
+      existsSync(join(developmentRoot, '.git')) &&
+      existsSync(join(developmentDirectory, `bunode${extension}`)) &&
+      existsSync(join(developmentDirectory, `node${extension}`))
+    ) {
+      return developmentDirectory
+    }
+
     throw new Error(
       `The optional package ${selected.name} is missing. Reinstall @bunode/cli for this platform.`,
       { cause: error }
