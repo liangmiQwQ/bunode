@@ -31,6 +31,7 @@ Vite+ is used as the project manager for JavaScript part. Use `vp install` to in
 Use pnpm catalog for workspace package dependencies. Keep dependency versions in `pnpm-workspace.yaml`'s default catalog and use `catalog:` in package manifests.
 
 Rust tasks are also defined in Vite+ (Vite Task), in project root's `vite.config.ts`.
+Run `vpr build` to build both the Rust binaries and JavaScript CLI wrapper.
 Run `vpr check` (lint and format for both Rust and JavaScript) and `vpr test` after you make changes.
 
 Core wrapper snap tests run through Vite+ and compare both plain and forced-color CLI output. Keep their `snap.json` commands declarative, schema-backed, and described with a short behavior-oriented `description`. Prefer plain command strings or command objects over driver files; use a driver only when process orchestration cannot be expressed cleanly in `snap.json`. They are defined in `tests/snap-tests/<bun-ver>/<project-name>`. If a test can be done in both Rust util test and snap tests, prefer snap tests.
