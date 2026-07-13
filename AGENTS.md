@@ -20,6 +20,8 @@ Its source code won't be published on crates.io. But its binary will be publishe
 
 The `@bunode/cli` is a tool to generate Bunode prefix. It includes two parts, a small bunode wrapper writtern in Node.js with `free-shellrc`, and the Rust binary CLI can run without any Node.js runtime.
 
+The native CLI owns the patch, revert, list, update, and implode lifecycle, and keeps durable prefix records under `~/.bunode`.
+
 The CLI release publishes the JavaScript wrapper and platform-specific optional packages in lockstep. Each platform package contains both the native `bunode` CLI and the Bunode runtime exposed as `node`.
 
 ## Rule
