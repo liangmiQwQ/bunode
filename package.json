@@ -2,8 +2,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare-release": "node scripts/prepare-release.ts",
-    "ready": "vpr test && vpr check"
+    "ready": "vpr test && vpr check",
+    "release": "node scripts/release.ts"
   },
   "devDependencies": {
     "@liangmi/vp-config": "catalog:",
