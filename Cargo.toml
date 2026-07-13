@@ -26,6 +26,7 @@ nursery = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 base64 = "0.22.1"
+cliclack = "0.5.5"
 deno_dotenv = "0.22.0"
 flate2 = "1.1.9"
 lexopt = "0.3.2"

@@ -27,6 +27,7 @@ oxc_parser = { workspace = true }
 oxc_span = { workspace = true }
 
 [dependencies]
+cliclack = { workspace = true }
 deno_dotenv = { workspace = true }
 flate2 = { workspace = true }
 lexopt = { workspace = true }

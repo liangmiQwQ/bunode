@@ -1,6 +1,6 @@
 use std::{
   env, fs,
-  io::{self, IsTerminal, Write},
+  io::{self, IsTerminal},
   path::{Path, PathBuf},
   process::{self, Command},
 };
@@ -477,11 +477,7 @@ fn confirm(message: &str, yes: bool) -> Result<()> {
     return Err(CliError::new(format!("{message} Pass --yes to confirm.")));
   }
 
-  print!("{message} [y/N] ");
-  io::stdout().flush()?;
-  let mut answer = String::new();
-  io::stdin().read_line(&mut answer)?;
-  if matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+  if cliclack::confirm(message).initial_value(false).interact()? {
     Ok(())
   } else {
     Err(CliError::new("operation cancelled"))
