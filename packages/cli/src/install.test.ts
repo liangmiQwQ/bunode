@@ -25,17 +25,13 @@ it('keeps the native CLI usable when the JavaScript wrapper disappears', async (
     const installation = await syncBunodeInstallation(entryPath, userHome, packageDirectory)
     const launcher = join(installation.binDirectory, isWindows ? 'bunode.cmd' : 'bunode')
 
-    await expect(
-      run(installation.nodeBinary, ['-e', `process.stdout.write('bunode node\\n')`])
-    ).resolves.toContain('bunode node')
-    await expect(run(launcher, ['-e', `process.stdout.write('native cli\\n')`])).resolves.toContain(
-      'javascript wrapper'
-    )
+    await expect(run(installation.nodeBinary, ['--version'])).resolves.toContain(process.version)
+    await expect(run(launcher, ['--version'])).resolves.toContain('javascript wrapper')
 
     await unlink(entryPath)
-    const fallback = await run(launcher, ['-e', `process.stdout.write('native cli\\n')`])
+    const fallback = await run(launcher, ['--version'])
     expect(fallback).toContain('JavaScript wrapper unavailable')
-    expect(fallback).toContain('native cli')
+    expect(fallback).toContain(process.version)
   } finally {
     await rm(root, { force: true, recursive: true })
   }
