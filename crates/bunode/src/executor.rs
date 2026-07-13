@@ -119,7 +119,12 @@ impl Executor {
   ) -> Result<ExecutionResult, BunodeError> {
     let command = Self::configure_bun(invocation, mode)?;
 
-    Ok(ExecutionResult::Status(run_configured_bun(command)?))
+    #[cfg(unix)]
+    let status = run_configured_bun(command)?;
+    #[cfg(windows)]
+    let status = run_configured_bun(&command)?;
+
+    Ok(ExecutionResult::Status(status))
   }
 
   fn configure_bun(invocation: &ExecutionPlan, mode: BunMode<'_>) -> Result<Command, BunodeError> {
@@ -234,9 +239,95 @@ fn run_configured_bun(mut command: std::process::Command) -> io::Result<ExitStat
   Err(command.exec())
 }
 
-#[cfg(not(unix))]
-fn run_configured_bun(mut command: std::process::Command) -> io::Result<ExitStatus> {
-  command.status()
+#[cfg(windows)]
+fn run_configured_bun(command: &std::process::Command) -> io::Result<ExitStatus> {
+  use std::{iter, os::windows::process::ExitStatusExt, ptr};
+
+  // 1. Preserve Node's extra CRT file descriptors, including the fd 3 IPC channel used by fork.
+  let program = wide_string(command.get_program())?;
+  let arguments = iter::once(command.get_program())
+    .chain(command.get_args())
+    .map(wide_string)
+    .collect::<io::Result<Vec<_>>>()?;
+  let mut argument_pointers = arguments.iter().map(Vec::as_ptr).collect::<Vec<_>>();
+  argument_pointers.push(ptr::null());
+
+  // 2. Apply the Bunode metadata overrides without mutating the wrapper process environment.
+  let overrides = command
+    .get_envs()
+    .map(|(key, value)| (key.to_os_string(), value.map(OsStr::to_os_string)))
+    .collect::<Vec<_>>();
+  let mut environment_entries = env::vars_os()
+    .filter(|(key, _)| !overrides.iter().any(|(name, _)| windows_env_keys_equal(key, name)))
+    .collect::<Vec<_>>();
+  environment_entries
+    .extend(overrides.into_iter().filter_map(|(key, value)| value.map(|value| (key, value))));
+  let environment = environment_entries
+    .into_iter()
+    .map(|(key, value)| {
+      let mut entry = key;
+
+      entry.push("=");
+      entry.push(value);
+      wide_string(&entry)
+    })
+    .collect::<io::Result<Vec<_>>>()?;
+  let mut environment_pointers = environment.iter().map(Vec::as_ptr).collect::<Vec<_>>();
+  environment_pointers.push(ptr::null());
+
+  // SAFETY: Every pointer references a live, null-terminated UTF-16 buffer and both pointer arrays
+  // end with null. `_P_WAIT` keeps the wrapper alive until Bun exits while the CRT passes every open
+  // descriptor to Bun, which Windows CreateProcess through std::process::Command does not do.
+  let result = unsafe {
+    _wspawnve(P_WAIT, program.as_ptr(), argument_pointers.as_ptr(), environment_pointers.as_ptr())
+  };
+
+  if result == -1 {
+    // SAFETY: `_errno` returns the calling thread's CRT errno pointer.
+    return Err(io::Error::from_raw_os_error(unsafe { *_errno() }));
+  }
+
+  let status = u32::try_from(result).map_err(|_| {
+    io::Error::other(format!("Bun returned an invalid Windows exit status: {result}"))
+  })?;
+
+  Ok(ExitStatusExt::from_raw(status))
+}
+
+#[cfg(windows)]
+fn wide_string(value: &OsStr) -> io::Result<Vec<u16>> {
+  use std::os::windows::ffi::OsStrExt;
+
+  let mut wide = value.encode_wide().collect::<Vec<_>>();
+
+  if wide.contains(&0) {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "Windows argument contains a null"));
+  }
+
+  wide.push(0);
+
+  Ok(wide)
+}
+
+#[cfg(windows)]
+fn windows_env_keys_equal(left: &OsStr, right: &OsStr) -> bool {
+  left.to_string_lossy().eq_ignore_ascii_case(&right.to_string_lossy())
+}
+
+#[cfg(windows)]
+const P_WAIT: i32 = 0;
+
+#[cfg(windows)]
+#[cfg_attr(target_env = "msvc", link(name = "ucrt"))]
+#[cfg_attr(target_env = "gnu", link(name = "msvcrt"))]
+unsafe extern "C" {
+  fn _wspawnve(
+    mode: i32,
+    command: *const u16,
+    arguments: *const *const u16,
+    environment: *const *const u16,
+  ) -> isize;
+  fn _errno() -> *mut i32;
 }
 
 fn encode_os_string_json(values: &[std::ffi::OsString]) -> String {
