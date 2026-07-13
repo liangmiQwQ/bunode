@@ -6,7 +6,6 @@ on:
     branches:
       - main
     paths:
-      - .github/workflows/release.yml
       - packages/cli/package.json
 
 permissions: {}
