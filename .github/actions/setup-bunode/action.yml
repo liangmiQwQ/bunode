@@ -1,0 +1,33 @@
+name: Setup Bunode
+description: Build and select the Bunode runtime declared by this project
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve runtime versions
+      id: runtime
+      shell: bash
+      run: node scripts/setup-ci-runtime.mjs --github-output
+
+    - name: Setup Vite+
+      uses: voidzero-dev/setup-vp@v1
+      with:
+        cache: true
+        node-version: ${{ steps.runtime.outputs.node-version }}
+        run-install: false
+
+    - name: Build Bunode
+      shell: bash
+      run: cargo build --package bunode
+
+    - name: Create Bunode runtime
+      shell: bash
+      run: vp env exec --node "${{ steps.runtime.outputs.node-version }}" node scripts/setup-ci-runtime.mjs
+
+    - name: Install dependencies with Bunode
+      shell: bash
+      run: vp env exec --node "${{ steps.runtime.outputs.runtime-version }}" vp install
+
+    - name: Verify Bunode runtime
+      shell: bash
+      run: node scripts/setup-ci-runtime.mjs --verify

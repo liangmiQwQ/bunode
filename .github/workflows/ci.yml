@@ -23,12 +23,8 @@ jobs:
         with:
           components: clippy,rustfmt
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          cache: true
-          node-version: '22.18.0'
-          run-install: true
+      - name: Setup Bunode
+        uses: ./.github/actions/setup-bunode
 
       - name: Restore Vite Task cache
         id: vite-task-cache
@@ -70,12 +66,8 @@ jobs:
         with:
           components: clippy,rustfmt
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
-        with:
-          cache: true
-          node-version: '22.18.0'
-          run-install: true
+      - name: Setup Bunode
+        uses: ./.github/actions/setup-bunode
 
       - name: Test
         if: runner.os != 'Windows'
