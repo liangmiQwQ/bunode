@@ -1,4 +1,4 @@
-parentExecArgv=["--experimental-import-meta-resolve","--conditions","custom","-r","./preload.cjs"]
+parentExecArgv=["--experimental-import-meta-resolve","--disable-warning=ExperimentalWarning","--conditions","custom","-r","./preload.cjs"]
 execArgvWritable=true
-childExecArgv=["--experimental-import-meta-resolve","--conditions","custom","-r","./preload.cjs"]
+childExecArgv=["--experimental-import-meta-resolve","--disable-warning=ExperimentalWarning","--conditions","custom","-r","./preload.cjs"]
 childArgv=child

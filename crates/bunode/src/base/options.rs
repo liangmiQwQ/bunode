@@ -141,6 +141,14 @@ pub(super) const OPTION_SPECS: &[OptionSpec] = &[
     exec_argv: true,
     help: None,
   },
+  OptionSpec {
+    long: &["--disable-warning"],
+    short: None,
+    value: ValueMode::Required,
+    node_options_allowed: true,
+    exec_argv: true,
+    help: None,
+  },
   option_spec!(
     node,
     ["--inspect"],

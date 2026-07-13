@@ -245,9 +245,9 @@ fn run_configured_bun(command: &std::process::Command) -> io::Result<ExitStatus>
 
   // 1. Preserve Node's extra CRT file descriptors, including the fd 3 IPC channel used by fork.
   let program = wide_string(command.get_program())?;
-  let arguments = iter::once(command.get_program())
-    .chain(command.get_args())
-    .map(wide_string)
+  let arguments = iter::once((command.get_program(), true))
+    .chain(command.get_args().map(|argument| (argument, false)))
+    .map(|(argument, force_quotes)| wide_argument(argument, force_quotes))
     .collect::<io::Result<Vec<_>>>()?;
   let mut argument_pointers = arguments.iter().map(Vec::as_ptr).collect::<Vec<_>>();
   argument_pointers.push(ptr::null());
@@ -310,6 +310,45 @@ fn wide_string(value: &OsStr) -> io::Result<Vec<u16>> {
   wide.push(0);
 
   Ok(wide)
+}
+
+#[cfg(windows)]
+fn wide_argument(value: &OsStr, force_quotes: bool) -> io::Result<Vec<u16>> {
+  use std::os::windows::ffi::OsStrExt;
+
+  let source = value.encode_wide().collect::<Vec<_>>();
+  if source.contains(&0) {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "Windows argument contains a null"));
+  }
+
+  let quote = force_quotes
+    || value.is_empty()
+    || value.as_encoded_bytes().iter().any(|character| matches!(character, b' ' | b'\t'));
+  let mut result = Vec::with_capacity(source.len() + 2);
+  if quote {
+    result.push(u16::from(b'"'));
+  }
+
+  let mut backslashes = 0;
+  for character in source {
+    if character == u16::from(b'\\') {
+      backslashes += 1;
+    } else {
+      if character == u16::from(b'"') {
+        result.extend(std::iter::repeat_n(u16::from(b'\\'), backslashes + 1));
+      }
+      backslashes = 0;
+    }
+    result.push(character);
+  }
+
+  if quote {
+    result.extend(std::iter::repeat_n(u16::from(b'\\'), backslashes));
+    result.push(u16::from(b'"'));
+  }
+  result.push(0);
+
+  Ok(result)
 }
 
 #[cfg(windows)]

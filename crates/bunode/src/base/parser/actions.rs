@@ -54,6 +54,7 @@ pub(super) fn apply_option(
     "--experimental-import-meta-resolve" => {
       push_forward_flag(builder, "--experimental-import-meta-resolve");
     }
+    "--disable-warning" => push_forward_value(builder, "--disable-warning", value, option)?,
     "--inspect" => push_optional_forward(builder, "--inspect", value, Some("127.0.0.1:9229")),
     "--inspect-brk" => {
       push_optional_forward(builder, "--inspect-brk", value, Some("127.0.0.1:9229"));
