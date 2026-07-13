@@ -121,6 +121,12 @@ jobs:
           node-version: 22.18.0
           run-install: true
 
+      - name: Configure npm authentication
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22.18.0
+          registry-url: https://registry.npmjs.org
+
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
@@ -166,6 +172,21 @@ jobs:
           else
             npm publish --tag "$NPM_TAG" --provenance --access public
           fi
+
+  release:
+    name: Create GitHub release
+    needs:
+      - check
+      - publish
+    if: >-
+      always() &&
+      needs.check.result == 'success' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
 
       - name: Create GitHub release
         env:
