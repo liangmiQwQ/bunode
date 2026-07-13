@@ -5,7 +5,7 @@ use std::{
   io::{Read, Write},
   net::TcpListener,
   path::{Path, PathBuf},
-  process::Command,
+  process::{Command, Stdio},
   thread,
   time::{SystemTime, UNIX_EPOCH},
 };
@@ -75,21 +75,97 @@ fn cli_should_patch_list_and_revert_a_prefix() {
   fs::remove_dir_all(root).unwrap();
 }
 
+/// Declining an in-place version-manager change creates a sibling Bunode prefix.
+///
+/// Reproduces: choosing No previously exited with `operation cancelled`.
+#[test]
+fn cli_should_copy_version_managed_prefix_when_in_place_change_is_declined() {
+  // 1. Set up a version-managed Node prefix and local npm registry.
+  let root = temporary_directory();
+  let bunode_home = root.join("home");
+  let prefix = root.join("js_runtime/node/22.0.0");
+  let target = root.join("js_runtime/node/24.3.0+bun.1.2.3");
+  fs::create_dir_all(prefix.join("bin")).unwrap();
+  fs::create_dir_all(&bunode_home).unwrap();
+  write_executable(&prefix.join("bin/node"), "#!/bin/sh\nprintf 'v22.0.0\\n'\n");
+  write_executable(
+    &prefix.join("bin/npm"),
+    "#!/bin/sh\nPATH=\"$BUNODE_TEST_PATH\" exec npm \"$@\"\n",
+  );
+  write_executable(&bunode_home.join("node"), "#!/bin/sh\nprintf 'v24.3.0+bun.1.2.3\\n'\n");
+  let npm_cache = root.join("npm-cache");
+  fs::create_dir(&npm_cache).unwrap();
+  let (registry, server) = serve_registry(bun_archive_for_node("v24.3.0"));
+  let driver = root.join("patch.sh");
+  write_executable(
+    &driver,
+    "#!/bin/sh\nexec \"$BUNODE_TEST_BIN\" patch 1.2.3 \"$BUNODE_TEST_PREFIX\"\n",
+  );
+
+  // 2. Run the public CLI in a PTY and decline modifying the original prefix.
+  let mut command = script_command(&driver);
+  command
+    .env("BUNODE_TEST_BIN", env!("CARGO_BIN_EXE_bunode"))
+    .env("BUNODE_TEST_PREFIX", &prefix)
+    .env("BUNODE_HOME", &bunode_home)
+    .env("BUNODE_REGISTRY", &registry)
+    .env("BUNODE_TEST_PATH", std::env::var_os("PATH").unwrap_or_default())
+    .env("npm_config_cache", npm_cache)
+    .env("npm_config_fetch_retries", "0")
+    .env("npm_config_fetch_timeout", "1000")
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+  let mut child = command.spawn().unwrap();
+  child.stdin.take().unwrap().write_all(b"yn").unwrap();
+  let output = child.wait_with_output().unwrap();
+
+  // 3. Verify the original is untouched and the derived copy is managed and reversible.
+  assert!(
+    target.join("bun/bun").is_file(),
+    "copy was not created:\nstdout: {}\nstderr: {}",
+    String::from_utf8_lossy(&output.stdout),
+    String::from_utf8_lossy(&output.stderr)
+  );
+  assert!(!prefix.join("bun").exists());
+  let reverted = bunode(&bunode_home).arg("revert").arg(&target).arg("--yes").output().unwrap();
+  assert_success(&reverted);
+
+  server.join().unwrap();
+  fs::remove_dir_all(root).unwrap();
+}
+
 fn bunode(home: &Path) -> Command {
   let mut command = Command::new(env!("CARGO_BIN_EXE_bunode"));
   command.env("BUNODE_HOME", home);
   command
 }
 
+fn script_command(driver: &Path) -> Command {
+  let mut command = Command::new("script");
+  if cfg!(target_os = "linux") {
+    command.args(["-q", "-e", "-c"]).arg(driver).arg("/dev/null");
+  } else {
+    command.args(["-q", "/dev/null"]).arg(driver);
+  }
+  command
+}
+
 fn bun_archive() -> Vec<u8> {
-  let script = b"#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf '1.2.3\\n'; else printf 'v22.0.0\\n'; fi\n";
+  bun_archive_for_node("v22.0.0")
+}
+
+fn bun_archive_for_node(node_version: &str) -> Vec<u8> {
+  let script = format!(
+    "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf '1.2.3\\n'; else printf '{node_version}\\n'; fi\n"
+  );
   let encoder = GzEncoder::new(Vec::new(), Compression::default());
   let mut archive = tar::Builder::new(encoder);
   let mut header = tar::Header::new_gnu();
   header.set_size(script.len() as u64);
   header.set_mode(0o755);
   header.set_cksum();
-  archive.append_data(&mut header, "package/bin/bun", &script[..]).unwrap();
+  archive.append_data(&mut header, "package/bin/bun", script.as_bytes()).unwrap();
 
   let mut archive = archive.into_inner().unwrap().finish().unwrap();
   archive.resize(10 * 1024 * 1024 + 1, 0);

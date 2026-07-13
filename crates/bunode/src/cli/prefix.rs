@@ -29,7 +29,7 @@ pub fn patch(options: &PatchOptions) -> Result<()> {
 
   reject_installed_prefix(&source_prefix)?;
   let original_version = read_node_version(&source_node)?;
-  let (mut target_prefix, kind) = select_target(&source_prefix, options.copy_to.as_deref())?;
+  let (mut target_prefix, mut kind) = select_target(&source_prefix, options.copy_to.as_deref())?;
   if state.prefixes.iter().any(|record| same_path(&record.path, &target_prefix)) {
     return Err(CliError::new(format!(
       "{} is already a managed Bunode prefix",
@@ -63,13 +63,19 @@ pub fn patch(options: &PatchOptions) -> Result<()> {
       )?;
     }
     if kind == PrefixKind::Modified && looks_version_managed(&source_prefix, &original_version) {
-      confirm(
-        &format!(
-          "{} looks managed by a Node.js version manager. Modify it in place? (Use --copy <path> to keep it unchanged.)",
-          source_prefix.display()
-        ),
+      (target_prefix, kind) = select_version_managed_target(
+        &source_prefix,
+        &original_version,
+        &compatible_version,
+        &version,
         options.yes,
       )?;
+      if state.prefixes.iter().any(|record| same_path(&record.path, &target_prefix)) {
+        return Err(CliError::new(format!(
+          "{} is already a managed Bunode prefix",
+          target_prefix.display()
+        )));
+      }
     } else {
       confirm(&format!("Install Bunode into {}?", target_prefix.display()), options.yes)?;
     }
@@ -105,7 +111,7 @@ pub fn patch(options: &PatchOptions) -> Result<()> {
       return Err(error);
     }
 
-    println!("Patched {} with Bun {version}.", target_prefix.display());
+    cliclack::log::success(format!("Patched {} with Bun {version}.", target_prefix.display()))?;
     Ok(())
   })();
 
@@ -131,7 +137,7 @@ pub fn revert(options: &RevertOptions) -> Result<()> {
   revert_installed_prefix(&record.path, record.kind)?;
   state.prefixes.remove(index);
   config.save(&state)?;
-  println!("Reverted {}.", record.path.display());
+  cliclack::log::success(format!("Reverted {}.", record.path.display()))?;
 
   Ok(())
 }
@@ -140,7 +146,7 @@ pub fn list() -> Result<()> {
   let state = Config::discover()?.state()?;
 
   if state.prefixes.is_empty() {
-    println!("No managed Bunode prefixes.");
+    cliclack::log::info("No managed Bunode prefixes.")?;
     return Ok(());
   }
 
@@ -167,7 +173,7 @@ pub fn implode(yes: bool) -> Result<()> {
   let mut state = config.state()?;
 
   if state.prefixes.is_empty() {
-    println!("No managed Bunode prefixes.");
+    cliclack::log::info("No managed Bunode prefixes.")?;
     return Ok(());
   }
 
@@ -180,7 +186,7 @@ pub fn implode(yes: bool) -> Result<()> {
   let mut failures = Vec::new();
   state.prefixes.retain(|record| match revert_installed_prefix(&record.path, record.kind) {
     Ok(()) => {
-      println!("Reverted {}.", record.path.display());
+      let _ = cliclack::log::success(format!("Reverted {}.", record.path.display()));
       false
     }
     Err(error) => {
@@ -209,7 +215,7 @@ pub fn update(yes: bool) -> Result<()> {
     .collect::<Vec<_>>();
 
   if indexes.is_empty() {
-    println!("All managed prefixes already use Bunode {current_version}.");
+    cliclack::log::info(format!("All managed prefixes already use Bunode {current_version}."))?;
     return Ok(());
   }
 
@@ -225,10 +231,11 @@ pub fn update(yes: bool) -> Result<()> {
     match update_wrapper(&record.path, &config.wrapper_template()) {
       Ok(()) => {
         current_version.clone_into(&mut record.bunode_version);
-        println!("Updated {}.", record.path.display());
+        cliclack::log::success(format!("Updated {}.", record.path.display()))?;
       }
       Err(error) => {
-        eprintln!("warning: update failed for {}: {error}", record.path.display());
+        let _ =
+          cliclack::log::warning(format!("Update failed for {}: {error}", record.path.display()));
         failures.push(record.path.display().to_string());
       }
     }
@@ -256,6 +263,55 @@ fn select_target(source: &Path, copy_to: Option<&Path>) -> Result<(PathBuf, Pref
   }
 
   Ok((target, PrefixKind::Copied))
+}
+
+fn default_version_managed_target(
+  source: &Path,
+  original_version: &str,
+  compatible_version: &str,
+  bun_version: &str,
+) -> PathBuf {
+  let original_version = original_version.trim_start_matches('v');
+  let target_version = format!("{}+bun.{bun_version}", compatible_version.trim_start_matches('v'));
+  let mut target = PathBuf::new();
+  let mut replaced = false;
+
+  for component in source.components() {
+    let value = component.as_os_str().to_string_lossy();
+    if !replaced && value.trim_start_matches('v').eq_ignore_ascii_case(original_version) {
+      target.push(&target_version);
+      replaced = true;
+    } else {
+      target.push(component.as_os_str());
+    }
+  }
+
+  if replaced { target } else { source.with_file_name(target_version) }
+}
+
+fn select_version_managed_target(
+  source: &Path,
+  original_version: &str,
+  compatible_version: &str,
+  bun_version: &str,
+  yes: bool,
+) -> Result<(PathBuf, PrefixKind)> {
+  let copy_target =
+    default_version_managed_target(source, original_version, compatible_version, bun_version);
+  let modify = confirm_choice(
+    &format!(
+      "{} looks managed by a Node.js version manager. Modify it in place? (No creates {}.)",
+      source.display(),
+      copy_target.display()
+    ),
+    yes,
+  )?;
+
+  if modify {
+    Ok((source.to_owned(), PrefixKind::Modified))
+  } else {
+    select_target(source, Some(&copy_target))
+  }
 }
 
 fn install_prefix(prefix: &Path, node: &Path, template: &Path, bun_source: &Path) -> Result<()> {
@@ -470,18 +526,18 @@ fn read_output(command: &Path, args: &[&str]) -> Result<String> {
 }
 
 fn confirm(message: &str, yes: bool) -> Result<()> {
+  if confirm_choice(message, yes)? { Ok(()) } else { Err(CliError::new("operation cancelled")) }
+}
+
+fn confirm_choice(message: &str, yes: bool) -> Result<bool> {
   if yes {
-    return Ok(());
+    return Ok(true);
   }
   if !io::stdin().is_terminal() {
     return Err(CliError::new(format!("{message} Pass --yes to confirm.")));
   }
 
-  if cliclack::confirm(message).initial_value(false).interact()? {
-    Ok(())
-  } else {
-    Err(CliError::new("operation cancelled"))
-  }
+  Ok(cliclack::confirm(message).initial_value(false).interact()?)
 }
 
 fn copy_executable(source: &Path, destination: &Path) -> Result<()> {

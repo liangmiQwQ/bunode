@@ -42,7 +42,7 @@ fn main() -> ExitCode {
   match run() {
     Ok(()) => ExitCode::SUCCESS,
     Err(error) => {
-      eprintln!("bunode: {error}");
+      let _ = cliclack::log::error(format!("bunode: {error}"));
       ExitCode::FAILURE
     }
   }
