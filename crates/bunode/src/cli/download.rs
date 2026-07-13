@@ -11,6 +11,8 @@ use sha2::{Digest, Sha512};
 
 use super::{CliError, Result};
 
+const MAX_BUN_PACKAGE_SIZE: u64 = 512 * 1024 * 1024;
+
 #[derive(Deserialize)]
 struct PackageMetadata {
   dist: PackageDistribution,
@@ -74,6 +76,8 @@ fn get_bytes(url: &str) -> Result<Vec<u8>> {
 
   response
     .body_mut()
+    .with_config()
+    .limit(MAX_BUN_PACKAGE_SIZE)
     .read_to_vec()
     .map_err(|error| CliError::new(format!("failed to read {url}: {error}")))
 }

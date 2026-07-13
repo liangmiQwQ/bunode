@@ -16,6 +16,8 @@ use sha2::{Digest, Sha512};
 
 /// A managed prefix can complete its full patch and revert lifecycle.
 ///
+/// The registry fixture exceeds 10 MiB, matching the size class of real Bun npm packages.
+///
 /// Spec: rfcs/bunode-cli.md
 #[test]
 fn cli_should_patch_list_and_revert_a_prefix() {
@@ -76,7 +78,9 @@ fn bun_archive() -> Vec<u8> {
   header.set_cksum();
   archive.append_data(&mut header, "package/bin/bun", &script[..]).unwrap();
 
-  archive.into_inner().unwrap().finish().unwrap()
+  let mut archive = archive.into_inner().unwrap().finish().unwrap();
+  archive.resize(10 * 1024 * 1024 + 1, 0);
+  archive
 }
 
 fn serve_registry(archive: Vec<u8>) -> (String, thread::JoinHandle<()>) {
