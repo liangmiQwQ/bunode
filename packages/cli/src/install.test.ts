@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { chmod, copyFile, link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, link, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { platform } from 'node:process'
@@ -9,6 +9,11 @@ import { expect, it } from 'vite-plus/test'
 import { createPathCommand, isExecutable, syncBunodeInstallation } from './install.ts'
 
 const isWindows = platform === 'win32'
+const packageVersion = (
+  JSON.parse(await readFile(resolve(import.meta.dirname, '../package.json'), 'utf8')) as {
+    version: string
+  }
+).version
 
 it('uses the host PATH syntax for PowerShell integration', () => {
   const binDirectory = join('bunode home', 'bin')
@@ -54,7 +59,7 @@ it(
       const fallback = await run(launcher, ['--version'])
       expect(fallback).toContain('Bunode failed')
       expect(fallback).toContain('JavaScript wrapper unavailable')
-      expect(fallback).toContain('bunode 0.0.0-alpha.1')
+      expect(fallback).toContain(`bunode ${packageVersion}`)
     } finally {
       await rm(root, { force: true, recursive: true })
     }
