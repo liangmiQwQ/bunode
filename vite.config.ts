@@ -31,6 +31,7 @@ export default base({
       },
       test: {
         command: ['cargo test --workspace', 'vp test'],
+        dependsOn: ['build:rs'],
         ...cargoTask
       },
       check: {
