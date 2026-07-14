@@ -1,7 +1,5 @@
-# Temporary bootstrap while this branch cannot install its own unpublished @bunode/cli package.
-# Replace this action with the published Bunode install flow after the first native CLI release.
-name: Bootstrap Bunode for CI
-description: Bootstrap this branch's unpublished Bunode runtime for project CI
+name: Setup Bunode for CI
+description: Install the project's Bunode runtime for CI
 
 runs:
   using: composite
@@ -9,7 +7,11 @@ runs:
     - name: Resolve runtime versions
       id: runtime
       shell: bash
-      run: node scripts/setup-ci-runtime.mjs --github-output
+      run: |
+        runtime_version=$(node -p "require('./package.json').devEngines.runtime.version")
+        echo "node-version=${runtime_version%%+bun.*}" >> "$GITHUB_OUTPUT"
+        echo "bun-version=${runtime_version#*+bun.}" >> "$GITHUB_OUTPUT"
+        echo "runtime-version=${runtime_version}" >> "$GITHUB_OUTPUT"
 
     - name: Setup Vite+
       uses: voidzero-dev/setup-vp@v1
@@ -18,13 +20,14 @@ runs:
         node-version: ${{ steps.runtime.outputs.node-version }}
         run-install: false
 
-    - name: Build Bunode
+    - name: Install Bunode runtime
       shell: bash
-      run: cargo build --package bunode
-
-    - name: Create Bunode runtime
-      shell: bash
-      run: vp env exec --node "${{ steps.runtime.outputs.node-version }}" node scripts/setup-ci-runtime.mjs
+      working-directory: ${{ runner.temp }}
+      run: >-
+        vp env exec --node "${{ steps.runtime.outputs.node-version }}"
+        vp dlx @bunode/cli patch "${{ steps.runtime.outputs.bun-version }}"
+        --copy "${VP_HOME:-$HOME/.vite-plus}/js_runtime/node/${{ steps.runtime.outputs.runtime-version }}"
+        --yes
 
     - name: Install dependencies with Bunode
       shell: bash
@@ -36,4 +39,5 @@ runs:
 
     - name: Verify Bunode runtime
       shell: bash
-      run: node scripts/setup-ci-runtime.mjs --verify
+      run: |
+        node -e "if (process.version !== 'v${{ steps.runtime.outputs.node-version }}' || process.versions.bun !== '${{ steps.runtime.outputs.bun-version }}') process.exit(1)"
