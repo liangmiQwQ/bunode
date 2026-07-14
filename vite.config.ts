@@ -8,6 +8,17 @@ const cargoTask = {
 export default base({
   run: {
     tasks: {
+      build: {
+        command: 'echo "Build complete"',
+        dependsOn: ['build:rs', 'build:js'],
+        output: []
+      },
+      'build:js': {
+        command: 'vp pack',
+        cwd: 'packages/cli',
+        input: [{ auto: true }, '!packages/cli/dist/**'],
+        output: [{ pattern: 'packages/cli/dist/**', base: 'workspace' }]
+      },
       'build:rs': {
         command: 'cargo build -p bunode',
         ...cargoTask,

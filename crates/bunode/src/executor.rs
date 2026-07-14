@@ -119,7 +119,12 @@ impl Executor {
   ) -> Result<ExecutionResult, BunodeError> {
     let command = Self::configure_bun(invocation, mode)?;
 
-    Ok(ExecutionResult::Status(run_configured_bun(command)?))
+    #[cfg(unix)]
+    let status = run_configured_bun(command)?;
+    #[cfg(windows)]
+    let status = run_configured_bun(&command)?;
+
+    Ok(ExecutionResult::Status(status))
   }
 
   fn configure_bun(invocation: &ExecutionPlan, mode: BunMode<'_>) -> Result<Command, BunodeError> {
@@ -234,9 +239,127 @@ fn run_configured_bun(mut command: std::process::Command) -> io::Result<ExitStat
   Err(command.exec())
 }
 
-#[cfg(not(unix))]
-fn run_configured_bun(mut command: std::process::Command) -> io::Result<ExitStatus> {
-  command.status()
+#[cfg(windows)]
+fn run_configured_bun(command: &std::process::Command) -> io::Result<ExitStatus> {
+  use std::{iter, os::windows::process::ExitStatusExt, ptr};
+
+  // 1. Preserve Node's extra CRT file descriptors, including the fd 3 IPC channel used by fork.
+  let program = wide_string(command.get_program())?;
+  let arguments = iter::once((command.get_program(), true))
+    .chain(command.get_args().map(|argument| (argument, false)))
+    .map(|(argument, force_quotes)| wide_argument(argument, force_quotes))
+    .collect::<io::Result<Vec<_>>>()?;
+  let mut argument_pointers = arguments.iter().map(Vec::as_ptr).collect::<Vec<_>>();
+  argument_pointers.push(ptr::null());
+
+  // 2. Let the CRT inherit Windows' environment block after applying the Bunode metadata.
+  let overrides = command
+    .get_envs()
+    .map(|(key, value)| (key.to_os_string(), env::var_os(key), value.map(OsStr::to_os_string)))
+    .collect::<Vec<_>>();
+  for (key, _, value) in &overrides {
+    // SAFETY: Bunode's native wrapper is single-threaded and does not read the environment again
+    // until `_wspawnv` returns, so no thread can observe or race these temporary changes.
+    unsafe {
+      if let Some(value) = value {
+        env::set_var(key, value);
+      } else {
+        env::remove_var(key);
+      }
+    }
+  }
+
+  // SAFETY: Every pointer references a live, null-terminated UTF-16 buffer and the argument pointer
+  // array ends with null. `P_WAIT` keeps the wrapper alive until Bun exits while the CRT passes every
+  // open descriptor to Bun, which Windows CreateProcess through std::process::Command does not do.
+  let result = unsafe { _wspawnv(P_WAIT, program.as_ptr(), argument_pointers.as_ptr()) };
+
+  for (key, previous, _) in overrides {
+    // SAFETY: This restores the same single-threaded process environment changed above.
+    unsafe {
+      if let Some(previous) = previous {
+        env::set_var(key, previous);
+      } else {
+        env::remove_var(key);
+      }
+    }
+  }
+
+  if result == -1 {
+    // SAFETY: `_errno` returns the calling thread's CRT errno pointer.
+    return Err(io::Error::from_raw_os_error(unsafe { *_errno() }));
+  }
+
+  let status = u32::try_from(result).map_err(|_| {
+    io::Error::other(format!("Bun returned an invalid Windows exit status: {result}"))
+  })?;
+
+  Ok(ExitStatusExt::from_raw(status))
+}
+
+#[cfg(windows)]
+fn wide_string(value: &OsStr) -> io::Result<Vec<u16>> {
+  use std::os::windows::ffi::OsStrExt;
+
+  let mut wide = value.encode_wide().collect::<Vec<_>>();
+
+  if wide.contains(&0) {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "Windows argument contains a null"));
+  }
+
+  wide.push(0);
+
+  Ok(wide)
+}
+
+#[cfg(windows)]
+fn wide_argument(value: &OsStr, force_quotes: bool) -> io::Result<Vec<u16>> {
+  use std::os::windows::ffi::OsStrExt;
+
+  let source = value.encode_wide().collect::<Vec<_>>();
+  if source.contains(&0) {
+    return Err(io::Error::new(io::ErrorKind::InvalidInput, "Windows argument contains a null"));
+  }
+
+  let quote = force_quotes
+    || value.is_empty()
+    || value.as_encoded_bytes().iter().any(|character| matches!(character, b' ' | b'\t'));
+  let mut result = Vec::with_capacity(source.len() + 2);
+  if quote {
+    result.push(u16::from(b'"'));
+  }
+
+  let mut backslashes = 0;
+  for character in source {
+    if character == u16::from(b'\\') {
+      backslashes += 1;
+    } else {
+      if character == u16::from(b'"') {
+        result.extend(std::iter::repeat_n(u16::from(b'\\'), backslashes + 1));
+      }
+      backslashes = 0;
+    }
+    result.push(character);
+  }
+
+  if quote {
+    result.extend(std::iter::repeat_n(u16::from(b'\\'), backslashes));
+    result.push(u16::from(b'"'));
+  }
+  result.push(0);
+
+  Ok(result)
+}
+
+#[cfg(windows)]
+const P_WAIT: i32 = 0;
+
+#[cfg(windows)]
+#[cfg_attr(target_env = "msvc", link(name = "ucrt"))]
+#[cfg_attr(target_env = "gnu", link(name = "msvcrt"))]
+unsafe extern "C" {
+  fn _wspawnv(mode: i32, command: *const u16, arguments: *const *const u16) -> isize;
+  fn _errno() -> *mut i32;
 }
 
 fn encode_os_string_json(values: &[std::ffi::OsString]) -> String {

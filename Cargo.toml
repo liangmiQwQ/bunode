@@ -25,9 +25,16 @@ pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
+base64 = "0.22.1"
+cliclack = "0.5.5"
 deno_dotenv = "0.22.0"
+flate2 = "1.1.9"
 lexopt = "0.3.2"
 semver = "1.0.28"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+sha2 = "0.11.0"
+tar = "0.4.46"
 textwrap = "0.16.2"
 thiserror = "2.0.18"
 oxc_allocator = "0.138.0"

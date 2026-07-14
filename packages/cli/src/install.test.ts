@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { chmod, copyFile, link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { platform } from 'node:process'
 
 import { expect, it } from 'vite-plus/test'
@@ -30,42 +30,49 @@ it(
     const userHome = join(root, 'home')
     const packageDirectory = join(root, 'platform-package')
     const entryPath = join(root, 'bunode-entry.mjs')
+    const extension = isWindows ? '.exe' : ''
+    const artifactDirectory = resolve(import.meta.dirname, '../../../target/debug')
 
     try {
       await mkdir(packageDirectory, { recursive: true })
-      await copyExecutable(join(packageDirectory, isWindows ? 'bunode.exe' : 'bunode'))
-      await copyExecutable(join(packageDirectory, isWindows ? 'node.exe' : 'node'))
+      await copyExecutable(
+        join(artifactDirectory, `bunode${extension}`),
+        join(packageDirectory, `bunode${extension}`)
+      )
+      await copyExecutable(
+        join(artifactDirectory, `node${extension}`),
+        join(packageDirectory, `node${extension}`)
+      )
       await writeFile(entryPath, `process.stdout.write('javascript wrapper\\n')\n`)
 
       const installation = await syncBunodeInstallation(entryPath, userHome, packageDirectory)
       const launcher = join(installation.binDirectory, isWindows ? 'bunode.ps1' : 'bunode')
 
-      await expect(run(installation.nodeBinary, ['--version'])).resolves.toContain(process.version)
       await expect(run(launcher, ['--version'])).resolves.toContain('javascript wrapper')
 
       await copyFile(join(import.meta.dirname, '../bin/bunode.mjs'), entryPath)
       const fallback = await run(launcher, ['--version'])
       expect(fallback).toContain('Bunode failed')
       expect(fallback).toContain('JavaScript wrapper unavailable')
-      expect(fallback).toContain(process.version)
+      expect(fallback).toContain('bunode 0.0.0-alpha.1')
     } finally {
       await rm(root, { force: true, recursive: true })
     }
   }
 )
 
-async function copyExecutable(path: string): Promise<void> {
+async function copyExecutable(source: string, destination: string): Promise<void> {
   try {
-    await link(process.execPath, path)
+    await link(source, destination)
   } catch (error) {
     const { code } = error as NodeJS.ErrnoException
     if (code !== 'EXDEV' && code !== 'EPERM' && code !== 'EACCES') {
       throw error
     }
-    await copyFile(process.execPath, path)
+    await copyFile(source, destination)
   }
   if (!isWindows) {
-    await chmod(path, 0o755)
+    await chmod(destination, 0o755)
   }
 }
 

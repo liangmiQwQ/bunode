@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::error::{BunodeError, CliUsageError};
 
-use super::super::options::{HelpSection, OptionSpec};
+use super::super::options::OptionSpec;
 use super::super::{builtins, env_file};
 use super::NodeCommand;
 use super::state::{
@@ -30,9 +30,7 @@ pub(super) fn apply_option(
     state.print_operand_mode = PrintOperandMode::Script;
   }
 
-  if source == Source::CommandLine
-    && spec.help.is_some_and(|help| help.section == HelpSection::Node)
-  {
+  if source == Source::CommandLine && spec.exec_argv {
     builder.exec_argv.extend(original);
   }
 
@@ -53,6 +51,10 @@ pub(super) fn apply_option(
     }
     "--require" | "-r" => push_common_js_preload(builder, required_option_value(value, option)?),
     "--import" => push_es_module_preload(builder, required_option_value(value, option)?)?,
+    "--experimental-import-meta-resolve" => {
+      push_forward_flag(builder, "--experimental-import-meta-resolve");
+    }
+    "--disable-warning" => push_forward_value(builder, "--disable-warning", value, option)?,
     "--inspect" => push_optional_forward(builder, "--inspect", value, Some("127.0.0.1:9229")),
     "--inspect-brk" => {
       push_optional_forward(builder, "--inspect-brk", value, Some("127.0.0.1:9229"));

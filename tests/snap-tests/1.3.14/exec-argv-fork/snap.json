@@ -1,4 +1,6 @@
 {
-  "description": "Forwarded Bun flags, custom conditions, and require preloads survive child_process.fork.",
-  "commands": ["node --bun-smol --conditions custom -r ./preload.cjs parent.cjs"]
+  "description": "Forwarded Bun flags, legacy Node flags, warning filters, custom conditions, and require preloads survive child_process.fork.",
+  "commands": [
+    "node --bun-smol --experimental-import-meta-resolve --disable-warning=ExperimentalWarning --conditions custom -r ./preload.cjs parent.cjs"
+  ]
 }
