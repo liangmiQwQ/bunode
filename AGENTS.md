@@ -36,7 +36,7 @@ Run `vpr check` (lint and format for both Rust and JavaScript) and `vpr test` af
 
 Core wrapper snap tests run through Vite+ and compare both plain and forced-color CLI output. Keep their `snap.json` commands declarative, schema-backed, and described with a short behavior-oriented `description`. Prefer plain command strings or command objects over driver files; use a driver only when process orchestration cannot be expressed cleanly in `snap.json`. They are defined in `tests/snap-tests/<bun-ver>/<project-name>`. If a test can be done in both Rust util test and snap tests, prefer snap tests.
 
-Keep AGENTS.md updated with the project codebase. Consider if there is need to modify AGENTS.md after your changes. Don't store detail things like file structure or project implementation details in AGENTS.md.
+If you find AGENTS.md is outdated, please notice users to change in response.
 
 Keep code functional. Never use classes. Write simple code and make function reusable if possible. Use Unix philosophy to design your code. For a function with multiple steps, use comment to divide, like `// 1. Do something first`, `// 2. Do something second`
 
