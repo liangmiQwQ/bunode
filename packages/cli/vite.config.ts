@@ -1,6 +1,6 @@
-import { cli } from '@liangmi/vp-config'
+import { liangmi } from '@liangmi/vp-config'
 
-export default cli.only(['pack'], {
+export default await liangmi({
   pack: {
     entry: './src/cli.ts'
   }

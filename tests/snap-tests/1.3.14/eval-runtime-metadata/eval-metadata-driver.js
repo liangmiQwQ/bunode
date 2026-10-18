@@ -1,3 +1,4 @@
+/* oxlint-disable node/no-sync -- Snapshot drivers capture each child process before printing results. */
 import { spawnSync } from 'node:child_process'
 
 function run(args, options = {}) {
