@@ -1,3 +1,4 @@
+/* oxlint-disable node/no-sync -- Resolve the launcher synchronously before starting the runtime. */
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'

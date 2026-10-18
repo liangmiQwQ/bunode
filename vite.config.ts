@@ -1,28 +1,29 @@
-import { base } from '@liangmi/vp-config'
+import { liangmi } from '@liangmi/vp-config'
 
 const cargoTask = {
   input: [{ auto: true }, '!target/**', '!.dev/**'],
   output: []
 }
 
-export default base({
+export default await liangmi({
   run: {
     tasks: {
       build: {
         command: 'echo "Build complete"',
         dependsOn: ['build:rs', 'build:js'],
-        output: []
+        cache: { output: [] }
       },
       'build:js': {
         command: 'vp pack',
         cwd: 'packages/cli',
-        input: [{ auto: true }, '!packages/cli/dist/**'],
-        output: [{ pattern: 'packages/cli/dist/**', base: 'workspace' }]
+        cache: {
+          input: [{ auto: true }, '!packages/cli/dist/**'],
+          output: [{ pattern: 'packages/cli/dist/**', base: 'workspace' }]
+        }
       },
       'build:rs': {
         command: 'cargo build -p bunode',
-        ...cargoTask,
-        output: [{ auto: true }]
+        cache: { ...cargoTask, output: [{ auto: true }] }
       },
       dev: {
         command: 'node scripts/setup-dev.ts',
@@ -32,7 +33,7 @@ export default base({
       test: {
         command: ['cargo test --workspace', 'vp test'],
         dependsOn: ['build:rs'],
-        ...cargoTask
+        cache: cargoTask
       },
       check: {
         command: [
@@ -41,7 +42,7 @@ export default base({
           'cargo fmt --check',
           'cargo clippy --workspace --all-targets -- -D warnings'
         ],
-        ...cargoTask
+        cache: cargoTask
       }
     }
   }
